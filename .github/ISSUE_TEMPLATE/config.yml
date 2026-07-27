@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: How do I use this with …?
+    url: ../../discussions
+    about: Usage questions go to Discussions. Answered when there is time.
+  - name: Security issue
+    url: ../../security/advisories/new
+    about: Report privately. Silent wrong pixels count as a security issue here.
+  - name: Support contract, LTS, or evidence for a regulatory submission
+    url: ../../issues/new?title=commercial%20enquiry
+    about: This is paid work — open an issue titled "commercial enquiry".

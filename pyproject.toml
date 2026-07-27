@@ -1,0 +1,49 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "plumbline"
+version = "0.1.0"
+description = "A lossless JPEG (ITU-T T.81 SOF3) decoder that is right, or says so"
+readme = "README.md"
+requires-python = ">=3.9"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{ name = "Rungroj T." }]
+keywords = ["jpeg", "lossless", "dicom", "decoder", "codec", "medical imaging"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Healthcare Industry",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Medical Science Apps.",
+    "Topic :: Multimedia :: Graphics",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: C",
+    "Operating System :: OS Independent",
+]
+dependencies = ["numpy>=1.20"]
+
+[project.optional-dependencies]
+# The compiled core is the default and needs nothing extra. numba is only a
+# fallback for platforms with no wheel; it decodes greyscale and is slower to
+# start. Most people should not install it.
+turbo = ["numba>=0.57"]
+# pydicom is only used to pull frames out of real discs in the corpus tests;
+# the decoder itself never touches it.
+test = ["pytest>=7", "pydicom>=2.4"]
+
+[project.urls]
+Homepage = "https://github.com/yahkuza99/plumbline"
+Issues = "https://github.com/yahkuza99/plumbline/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/plumbline"]
+artifacts = ["src/plumbline/_plumbline.*"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/", "native/", "tests/", "README.md", "LICENSE", "NOTICE"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

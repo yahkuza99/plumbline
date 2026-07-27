@@ -1,0 +1,74 @@
+name: Wrong pixels, or a frame that is refused
+description: A frame decodes incorrectly, or Plumbline raises where it should not
+labels: ["decoding"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This is the report this project most wants. Thank you for taking the time.
+
+        **Before you attach anything: strip the patient data.** Send the JPEG
+        frame, not the DICOM file. CONTRIBUTING.md has a five-line script.
+
+  - type: checkboxes
+    id: no-phi
+    attributes:
+      label: Patient data
+      options:
+        - label: The attached frame contains no patient data — it is a bare JPEG frame, or synthetic, or from a public dataset.
+          required: true
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What happened
+      options:
+        - The pixels are wrong (it decoded, but the image is not right)
+        - It raised LosslessJpegError on a frame another decoder accepts
+        - It crashed or hung
+    validations:
+      required: true
+
+  - type: textarea
+    id: frame
+    attributes:
+      label: The frame
+      description: Attach it by dragging the file in. If you cannot share it at all, say so — the SOF/SOS header fields alone are still useful.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce
+      description: The code you ran and what it printed.
+      render: shell
+      value: |
+        import plumbline
+        print(plumbline.engine(), plumbline.__version__)
+        print(plumbline.header(frame))
+        pixels = plumbline.decode(frame)
+    validations:
+      required: true
+
+  - type: input
+    id: other-decoder
+    attributes:
+      label: What another decoder produces, if you checked
+      description: e.g. "pylibjpeg gives a different image", "GDCM agrees with Plumbline". Not required — but if two decoders disagree, that is the whole ballgame.
+
+  - type: input
+    id: environment
+    attributes:
+      label: Version, OS, Python
+      placeholder: plumbline 0.1.0, Windows 11, Python 3.12
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: ai
+    attributes:
+      label: If you used an AI tool to prepare this report
+      options:
+        - label: I reproduced the problem myself and the output above is real. (Leave unticked if no AI tool was involved.)
+          required: false

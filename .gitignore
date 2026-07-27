@@ -1,0 +1,28 @@
+# Medical images — never. The pre-commit hook in .githooks/ is the real
+# guard (it reads magic bytes, not names); this is the first line of defence.
+*.dcm
+*.DCM
+*.ima
+*.IMA
+*.dicom
+testdata/
+*.raw
+
+# Compiled decoder core — built, never committed
+src/plumbline/_plumbline.dll
+src/plumbline/_plumbline.so
+src/plumbline/_plumbline.dylib
+*.obj
+*.pdb
+*.lib
+*.exp
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.venv/
+venv/

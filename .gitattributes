@@ -1,0 +1,12 @@
+# The hook is a shell script. With CRLF endings the kernel looks for
+# `/bin/sh\r` and the commit fails with a message that makes no sense, so it
+# is checked out with LF everywhere, including on Windows.
+.githooks/* text eol=lf
+*.sh text eol=lf
+
+* text=auto
+*.py text
+*.c text
+*.md text
+*.yml text
+*.toml text

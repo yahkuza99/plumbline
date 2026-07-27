@@ -1,0 +1,50 @@
+#!/bin/sh
+# Refuse to commit medical images.
+#
+# The test corpus for this project is real patient data. It lives outside the
+# repository and must stay there. .gitignore alone is not enough: `git add -f`
+# and a mistyped path both walk straight past it, and a DICOM file whose name
+# gives nothing away is indistinguishable from a fixture until someone opens it.
+#
+# So identify files by what they contain, not what they are called.
+
+staged=$(git diff --cached --name-only --diff-filter=AM)
+[ -z "$staged" ] && exit 0
+
+blocked=""
+
+for f in $staged; do
+    [ -f "$f" ] || continue
+
+    # DICOM part-10: 128-byte preamble then the literal "DICM" at offset 128.
+    magic=$(dd if="$f" bs=1 skip=128 count=4 2>/dev/null | tr -d '\0')
+    if [ "$magic" = "DICM" ]; then
+        blocked="$blocked  $f  (DICOM part-10 file)\n"
+        continue
+    fi
+
+    # Raw DICOM without a preamble, and the bare transfer syntax UIDs. A file
+    # carrying these is either an image or something that quotes one.
+    if head -c 4096 "$f" 2>/dev/null | grep -qa '1\.2\.840\.10008\.1\.2'; then
+        case "$f" in
+            *.py|*.md|*.c|*.h|*.toml|*.yml|*.yaml|*.txt|*.cfg) ;;   # source may name a UID
+            *) blocked="$blocked  $f  (contains a DICOM transfer syntax UID)\n" ;;
+        esac
+    fi
+
+    case "$f" in
+        *.dcm|*.DCM|*.ima|*.IMA|*.dicom)
+            blocked="$blocked  $f  (medical image extension)\n" ;;
+    esac
+done
+
+if [ -n "$blocked" ]; then
+    printf '\nCommit refused. These files look like medical images:\n\n'
+    printf "$blocked"
+    printf '\nPatient data must never enter this repository, and rewriting history\n'
+    printf 'after a push does not remove it from a remote. If you are certain a\n'
+    printf 'file is synthetic, commit it with --no-verify and say so in the message.\n\n'
+    exit 1
+fi
+
+exit 0
