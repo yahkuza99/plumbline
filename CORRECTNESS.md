@@ -61,11 +61,40 @@ decoding real discs and diffing, not by reading the spec harder:
 
 | Check | Result |
 |---|---|
-| Real hospital discs, 8 manufacturers | **11/11 bit-exact**, full size, every frame (70/70) |
+| **Frames from real hospital discs** | **61,921 decoded · 0 refused · 0 crashed** (>10 billion pixels) |
+| Distinct scanner models in that corpus | **93** |
+| Distinct parameter combinations found | 117 (precision × predictor × components × restart × model) |
+| Covering sample re-decoded with the pure-Python reference | **88 exact, 0 differing** |
 | Colour frames | bit-exact against the reference implementation |
-| Synthetic conformance sweep | table shape × precision × predictor × restart interval × point transform, greyscale and colour |
+| Synthetic conformance sweep | table shape × precision × predictor × restart interval × point transform |
 | Silent disagreements between implementations | **0** |
 | Test suite | 261 tests |
+
+Comparing every frame against the reference is not possible — it runs at
+about 0.15 Mpx/s, so ten billion pixels would take roughly a day. Instead,
+every frame is decoded by the shipping decoder (which catches refusals,
+crashes and hangs), and one frame from every distinct parameter combination
+is then re-decoded with the reference and compared bit for bit.
+
+### Where that corpus came from, and what it does not cover
+
+**Every disc is from a hospital in Thailand.** That is a real limitation and
+not a small one: the 93 models are the machines Thai hospitals bought, and
+the distribution is dominated by Siemens, GE and Philips CT and MR. Scanners
+common in other markets may not appear even once.
+
+Concretely, the corpus is **thin or silent** on: Canon Medical / Toshiba,
+Konica Minolta, Carestream, Shimadzu, Mindray, Samsung; machines older than
+roughly 2010; and anything re-encoded by a vendor's own export or archiving
+software rather than written by the scanner.
+
+Every predictor observed in it was **1**. Predictors 2–7 are implemented and
+covered by the synthetic suite, but no real disc here has exercised them, so
+they carry less evidence than the numbers above might suggest.
+
+If you have discs from elsewhere, running `native/compare.py` against them is
+the single most useful thing you can do for this project — no files need to
+leave your machine, and a disagreement is worth more to us than a patch.
 
 Everything is verified against `plumbline.reference` — the pure-Python
 implementation in this repository — and never against another library. That

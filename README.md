@@ -84,9 +84,17 @@ with thanks — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Correctness
 
-11/11 real discs bit-exact at full size, every frame · colour bit-exact ·
-a synthetic sweep across table shape × precision × predictor × restart
-interval × point transform · **zero silent disagreements** · 261 tests.
+**61,921 frames from real hospital discs — 0 refused, 0 crashed** (over ten
+billion pixels, 93 distinct scanner models). One frame from each of the 117
+parameter combinations found was re-decoded with the pure-Python reference
+and compared bit for bit: **88 exact, 0 differing**. Plus colour bit-exact, a
+synthetic sweep across table shape × precision × predictor × restart interval
+× point transform, **zero silent disagreements**, and 261 tests.
+
+Those discs all come from hospitals in **Thailand**, which bounds what the
+number means: the models are the ones Thai hospitals bought, every predictor
+observed was 1, and scanners common in other markets may not appear at all.
+[CORRECTNESS.md](CORRECTNESS.md) states the gaps plainly.
 
 Everything is verified against `plumbline.reference`, the pure-Python
 implementation in this repository — never against another library. Testing a
