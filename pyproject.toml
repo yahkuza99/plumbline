@@ -41,6 +41,11 @@ Issues = "https://github.com/yahkuza99/plumbline/issues"
 packages = ["src/plumbline"]
 artifacts = ["src/plumbline/_plumbline.*"]
 
+# Tags the wheel for the platform whose binary it carries — see hatch_build.py.
+# Without it the wheel claims to be `any` while holding a Windows .dll.
+[tool.hatch.build.targets.wheel.hooks.custom]
+path = "hatch_build.py"
+
 [tool.hatch.build.targets.sdist]
 include = ["src/", "native/", "tests/", "README.md", "LICENSE", "NOTICE"]
 
