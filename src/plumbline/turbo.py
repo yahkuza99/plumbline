@@ -30,10 +30,11 @@ The samples are written straight out as uint8 or uint16. Decoding into int32 and
 converting afterwards, as an intermediate version did, spends a tenth of the
 run on a copy nobody asked for.
 
-Where the two decoders part company is a truncated scan: the oracle reads off the
-end into its own padding and returns an image whose tail it invented, while this
-one notices and refuses. Refusing is the house rule — a wrong image that looks
-right is worse than no image.
+The two decoders no longer part company anywhere. A truncated scan and a code
+the table never defines are refused by both, and the header, table and
+entropy-segment checks are `reference`'s own, imported rather than rewritten —
+a check that lived in only one of them would be a decoder that disagrees with
+the oracle, which is the one thing this project cannot have.
 
 numba is optional. Without it the module still imports and reports
 ``AVAILABLE = False``, and `decode` refuses, so a caller falls back to the oracle
@@ -44,7 +45,14 @@ from __future__ import annotations
 
 import numpy as np
 
-from plumbline.reference import MAX_PRECISION, LosslessJpegError, header
+from plumbline.reference import (
+    MAX_PRECISION,
+    LosslessJpegError,
+    check_frame,
+    check_scan,
+    check_table,
+    header,
+)
 
 try:                                       # pragma: no cover - depends on install
     from numba import njit, prange
@@ -203,19 +211,25 @@ def _difference(data, position, buffer, held, consumed, values, length, ssss):
 
     bits = np.int64(consumed[window])
     if bits != 0:                        # the fused, overwhelmingly common path
-        return np.int64(values[window]), position, buffer, held - bits
+        return np.int64(values[window]), position, buffer, held - bits, False
 
     # Code and mantissa are too long to share one window, but never too long for
     # the buffer: a refill leaves at least 33 bits and the pair takes at most 32.
     # SSSS = 16 cannot arrive here — its code alone always fits — so the mantissa
     # is always the next `size` bits.
-    held -= np.int64(length[window])     # length 0 means an invalid code: no bits
+    #
+    # The one other way to land here is a window matching none of the table's
+    # codes, whose entry is zero throughout. A table may legitimately leave code
+    # space unclaimed, but bits that fall in it are not bits that table encoded,
+    # so say so rather than consume nothing and call the difference zero.
+    code_length = np.int64(length[window])
+    held -= code_length
     size = np.int64(ssss[window])
     span = (np.int64(1) << size) - 1
     mantissa = np.int64((buffer >> np.uint64(held - size)) & np.uint64(span))
     if mantissa <= (span >> 1):          # T.81 H.1.2.2, the negative half
         mantissa -= span
-    return mantissa, position, buffer, held - size
+    return mantissa, position, buffer, held - size, code_length == 0
 
 
 @njit(inline="always")
@@ -242,7 +256,7 @@ def _predicted(selector, ra, rb, rc):
 
 @njit(cache=True)
 def _scan(out, width, height, data, restarts, interval, selector,
-          consumed, values, length, ssss, default, mask, ends):
+          consumed, values, length, ssss, default, mask, ends, faults):
     """Decode a whole scan sequentially, writing samples in the output dtype."""
     buffer = np.uint64(0)
     held = np.int64(0)
@@ -250,6 +264,7 @@ def _scan(out, width, height, data, restarts, interval, selector,
     index = 0
     used = 0
     since = 0
+    undefined = False
 
     for row in range(height):
         for col in range(width):
@@ -264,8 +279,9 @@ def _scan(out, width, height, data, restarts, interval, selector,
                 restarted = True
             since += 1
 
-            diff, position, buffer, held = _difference(
+            diff, position, buffer, held, missing = _difference(
                 data, position, buffer, held, consumed, values, length, ssss)
+            undefined = undefined or missing
 
             if restarted or (row == 0 and col == 0):
                 prediction = default
@@ -282,11 +298,12 @@ def _scan(out, width, height, data, restarts, interval, selector,
             index += 1
 
     ends[0] = position * 8 - held        # the bit just past the last one used
+    faults[0] = 1 if undefined else 0
 
 
 @njit(cache=True, parallel=True)
 def _scan_intervals(out, width, starts, counts, offsets, data,
-                    consumed, values, length, ssss, default, mask, ends):
+                    consumed, values, length, ssss, default, mask, ends, faults):
     """Decode restart intervals concurrently.
 
     Only sound when every interval begins on a row boundary and the predictor is
@@ -298,10 +315,12 @@ def _scan_intervals(out, width, starts, counts, offsets, data,
         position = np.int64(starts[segment])
         index = offsets[segment]
         col = 0
+        undefined = False
 
         for pixel in range(counts[segment]):
-            diff, position, buffer, held = _difference(
+            diff, position, buffer, held, missing = _difference(
                 data, position, buffer, held, consumed, values, length, ssss)
+            undefined = undefined or missing
 
             if pixel == 0:
                 prediction = default
@@ -317,6 +336,7 @@ def _scan_intervals(out, width, starts, counts, offsets, data,
                 col = 0
 
         ends[segment] = position * 8 - held
+        faults[segment] = 1 if undefined else 0
 
 
 # --------------------------------------------------------------------------- #
@@ -340,19 +360,25 @@ def _plan(interval: int, width: int, npix: int, restarts: np.ndarray):
 
 
 def _run(out, info, data, restarts, tables, default, mask, parallel):
-    """Decode the scan into `out`; return where each kernel left the bit stream."""
+    """Decode the scan into `out`.
+
+    Returns where each kernel left the bit stream, and whether any of them met
+    a window matching none of the table's codes.
+    """
     width, height = info["width"], info["height"]
     interval = info["restart_interval"]
     plan = _plan(interval, width, out.size, restarts) \
         if parallel and info["predictor"] == 1 else None
 
     ends = np.zeros(1 if plan is None else plan[0].size, dtype=np.int64)
+    faults = np.zeros(ends.size, dtype=np.int64)
     if plan is None:
         _scan(out, width, height, data, restarts, interval, info["predictor"],
-              *tables, default, mask, ends)
+              *tables, default, mask, ends, faults)
     else:
-        _scan_intervals(out, width, *plan, data, *tables, default, mask, ends)
-    return ends
+        _scan_intervals(out, width, *plan, data, *tables, default, mask,
+                        ends, faults)
+    return ends, faults
 
 
 def _validate(info: dict) -> None:
@@ -360,13 +386,7 @@ def _validate(info: dict) -> None:
     if components != 1:
         raise LosslessJpegError(
             f"{components}-component frames are not supported yet")
-    if not 1 <= info["predictor"] <= 7:
-        raise LosslessJpegError(f"predictor {info['predictor']} is not defined")
-    precision = info["precision"]
-    if not 1 <= precision <= MAX_PRECISION:
-        raise LosslessJpegError(f"precision {precision} is out of range")
-    if info["point_transform"] >= precision:
-        raise LosslessJpegError("point transform is larger than the precision")
+    check_frame(info)
 
 
 def decode(frame: bytes, parallel: bool = False) -> np.ndarray:
@@ -386,27 +406,31 @@ def decode(frame: bytes, parallel: bool = False) -> np.ndarray:
     height, width = info["height"], info["width"]
     shift = info["point_transform"]
     dtype = np.uint8 if precision <= 8 else np.uint16
-    if height == 0 or width == 0:
-        return np.zeros((height, width), dtype=dtype)
 
     identifiers = info["table_ids"]
     if not identifiers or identifiers[0] not in info["tables"]:
         raise LosslessJpegError("the scan names a Huffman table the frame "
                                 "does not define")
+    check_table(*info["tables"][identifiers[0]])
     tables = _fuse(*info["tables"][identifiers[0]])
 
+    check_scan(frame[info["scan_offset"]:], height * width,
+               info["restart_interval"])
     data, restarts = _destuff(np.frombuffer(frame, dtype=np.uint8,
                                             offset=info["scan_offset"]))
     out = np.empty(height * width, dtype=dtype)
-    ends = _run(out, info, data, restarts, tables,
-                np.int64(1) << (precision - 1 - shift),
-                (np.int64(1) << precision) - 1, parallel)
+    ends, faults = _run(out, info, data, restarts, tables,
+                        np.int64(1) << (precision - 1 - shift),
+                        (np.int64(1) << precision) - 1, parallel)
 
     # A well-formed scan never asks for a bit the frame does not contain. When it
     # does, the image is truncated and every sample after the break is invented,
     # so refuse instead of handing back an image that merely looks decoded.
     if int(ends.max()) > data.size * 8:
         raise LosslessJpegError("the entropy-coded data ends before the image does")
+    if int(faults.max()):
+        raise LosslessJpegError(
+            "the scan contains a code the frame's Huffman table does not define")
 
     out = out.reshape(height, width)
     if shift:

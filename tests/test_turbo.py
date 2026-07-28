@@ -15,10 +15,10 @@ The frames come from three places:
 * frames built by hand for the three details that decide correctness — the
   restart marker, SSSS = 16, and reconstruction wrapping at 2^P.
 
-The one place the two decoders deliberately part company is a truncated scan.
-The oracle reads off the end into its own padding and returns an image whose
-tail it invented; the accelerated decoder notices and refuses. Refusing is
-always allowed here. Returning pixels the oracle could not produce is not.
+The two decoders no longer part company anywhere: a truncated scan, and a code
+the scan's table never defines, are refused by both. Refusing is always allowed
+here — but only together. One decoder returning pixels the other will not is
+the failure this suite exists to catch.
 
 The whole module is skipped where numba is not installed.
 """
@@ -104,6 +104,22 @@ def _scan_for(pixels: int, seed: int) -> bytes:
     return _stuffed(generator.integers(0, 256, pixels * 4 + 16, dtype=np.uint8).tobytes())
 
 
+def _restarted(pixels: int, mcus: int, interval: int, seed: int) -> bytes:
+    """Random pieces joined by the restart markers a conforming frame carries.
+
+    One marker per interval boundary and no more, cycling RST0-RST7. Both are
+    load-bearing: a frame whose markers run out before its intervals do, or
+    whose markers skip a number, is one where bytes went missing, and every
+    decoder here refuses it rather than reading on into the next interval.
+    """
+    pieces = [_scan_for(pixels, seed + piece)
+              for piece in range(-(-mcus // interval))]
+    out = pieces[0]
+    for index, piece in enumerate(pieces[1:]):
+        out += bytes([0xFF, 0xD0 + (index & 7)]) + piece
+    return out
+
+
 def _decoded_twice(frame: bytes) -> tuple:
     """Both decoders' answers: an array each, or the exception type raised."""
     try:
@@ -123,6 +139,14 @@ def _identical(frame: bytes) -> bool:
     assert isinstance(fast, np.ndarray), f"the fast decoder refused this frame: {fast}"
     return (slow.dtype == fast.dtype and slow.shape == fast.shape
             and np.array_equal(slow, fast))
+
+
+def _refused_together(frame: bytes) -> bool:
+    """Both decoders must refuse — agreeing on a refusal is agreeing."""
+    slow, fast = _decoded_twice(frame)
+    assert not isinstance(slow, np.ndarray), "the oracle returned pixels for this frame"
+    assert not isinstance(fast, np.ndarray), "the fast decoder returned pixels"
+    return slow is LosslessJpegError and fast is LosslessJpegError
 
 
 # --------------------------------------------------------------------------- #
@@ -231,7 +255,8 @@ class TestAgreesOnTheHardCases:
         def scan_with(mask):
             out = np.empty(36, dtype=np.uint16)
             turbo._scan(out, 6, 6, data, restarts, 0, 7, *tables,
-                              np.int64(1 << 11), np.int64(mask), np.zeros(1, np.int64))
+                              np.int64(1 << 11), np.int64(mask),
+                              np.zeros(1, np.int64), np.zeros(1, np.int64))
             return out
 
         wrapped = scan_with((1 << 12) - 1)
@@ -271,8 +296,11 @@ class TestRefusesRatherThanGuesses:
         with pytest.raises(LosslessJpegError):
             turbo.decode(frame)
 
-    def test_a_frame_with_no_pixels_is_not_a_crash(self):
-        assert turbo.decode(_frame(0, 0, 8, b"", _COUNTS, _SYMBOLS)).shape == (0, 0)
+    def test_a_frame_with_no_pixels_is_refused_not_returned_empty(self):
+        """T.81 §B.2.2 gives X a range of 1..65535: a line of no samples is not
+        a small image, it is a frame that does not describe one."""
+        with pytest.raises(LosslessJpegError):
+            turbo.decode(_frame(0, 0, 8, b"", _COUNTS, _SYMBOLS))
 
 
 # --------------------------------------------------------------------------- #
@@ -287,16 +315,15 @@ def test_random_scans_decode_identically(shape, precision, predictor):
     seed = precision * 64 + predictor * 8 + len(shape)
     for width, height, interval in ((7, 5, 0), (7, 5, 7), (7, 5, 3), (9, 1, 3)):
         for shift in ((0, 1) if precision > 1 else (0,)):
-            scan = _scan_for(width * height, seed)
-            if interval:
-                # Real restart markers, each piece long enough to finish the
-                # image on its own: the markers may run out before the intervals
-                # do, and then both decoders must read straight on.
-                pieces = [_scan_for(width * height, seed + piece) for piece in range(9)]
-                scan = bytes([0xFF, 0xD0]).join(pieces)
+            scan = (_restarted(width * height, width * height, interval, seed)
+                    if interval else _scan_for(width * height, seed))
             frame = _frame(width, height, precision, scan, counts, symbols,
                            predictor, interval, shift)
-            assert _identical(frame), (shape, precision, predictor, width, interval, shift)
+            # `holes` leaves half the code space unclaimed and random bits land
+            # in it, so there is no image to agree on — only the refusal, which
+            # both decoders must reach.
+            agree = _refused_together if shape == "holes" else _identical
+            assert agree(frame), (shape, precision, predictor, width, interval, shift)
 
 
 def test_the_tables_under_test_reach_both_decoding_paths():
@@ -318,10 +345,9 @@ def test_the_tables_under_test_reach_both_decoding_paths():
 def test_decoding_restart_intervals_concurrently_changes_nothing(width, height):
     counts, symbols = _table("staircase", 12)
     for attempt in range(4):
-        pieces = [_scan_for(width, width * height + attempt * 8 + row)
-                  for row in range(height + 1)]
-        frame = _frame(width, height, 12, bytes([0xFF, 0xD0]).join(pieces),
-                       counts, symbols, 1, width, 0)
+        scan = _restarted(width, width * height, width,
+                          width * height + attempt * 8)
+        frame = _frame(width, height, 12, scan, counts, symbols, 1, width, 0)
         concurrent = turbo.decode(frame, parallel=True)
         assert np.array_equal(concurrent, turbo.decode(frame))
         assert np.array_equal(concurrent, decode_slowly(frame))

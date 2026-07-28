@@ -27,8 +27,10 @@ losing the ability to open a file.
 
 House rule, as everywhere in this project: decode correctly or raise
 `LosslessJpegError` — never return an image that merely looks decoded. A scan
-that ends before the image does is refused, exactly as `turbo` refuses
-it, where the oracle would quietly invent the tail.
+that ends before the image does is refused, as is one carrying a code its own
+Huffman table never defines; both are refused by all three decoders, because
+the header, table and entropy-segment checks are `reference`'s own, imported
+rather than reimplemented here.
 """
 
 from __future__ import annotations
@@ -39,7 +41,13 @@ from pathlib import Path
 
 import numpy as np
 
-from plumbline.reference import MAX_PRECISION, LosslessJpegError, header
+from plumbline.reference import (
+    LosslessJpegError,
+    check_frame,
+    check_scan,
+    check_table,
+    header,
+)
 
 _SUFFIX = {"win32": ".dll", "darwin": ".dylib"}.get(sys.platform, ".so")
 _LIBRARY = Path(__file__).with_name("_plumbline" + _SUFFIX)
@@ -47,6 +55,7 @@ _LIBRARY = Path(__file__).with_name("_plumbline" + _SUFFIX)
 _ABI = 1
 _OK = 0
 _TRUNCATED = -2
+_BAD_CODE = -6
 
 _lib = None
 try:                                       # pragma: no cover - depends on build
@@ -101,22 +110,11 @@ def _slots(info: dict) -> list[int]:
     return order
 
 
-def _validate(info: dict) -> None:
-    if not 1 <= info["predictor"] <= 7:
-        raise LosslessJpegError(f"predictor {info['predictor']} is not defined")
-    precision = info["precision"]
-    if not 1 <= precision <= MAX_PRECISION:
-        raise LosslessJpegError(f"precision {precision} is out of range")
-    if info["point_transform"] >= precision:
-        raise LosslessJpegError("point transform is larger than the precision")
-
-
 def _tables(info: dict) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Deduplicate the scan's Huffman tables and flatten them for the C side.
 
-    The validation mirrors what the oracle and `turbo` raise while
-    building their lookups, so a malformed table is refused with the same
-    message whichever decoder sees it first.
+    The validation is `reference.check_table`, so a malformed table is refused
+    with the same message whichever decoder sees it first.
     """
     index_of: dict[int, int] = {}
     counts_flat: list[int] = []
@@ -129,12 +127,8 @@ def _tables(info: dict) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]
         if identifier in index_of:
             continue
         counts, symbols = info["tables"][identifier]
-        if len(counts) != 16 or sum(counts) > len(symbols):
-            raise LosslessJpegError("Huffman table is truncated")
+        check_table(counts, symbols)
         used = symbols[:sum(counts)]
-        for symbol in used:
-            if symbol > MAX_PRECISION:
-                raise LosslessJpegError(f"SSSS={symbol} is out of range")
         index_of[identifier] = len(symbol_counts)
         counts_flat.extend(counts)
         symbols_flat.extend(used)
@@ -163,7 +157,7 @@ def decode(frame: bytes) -> np.ndarray:
 
     info = header(frame)
     order = _slots(info)
-    _validate(info)
+    check_frame(info)
 
     precision = info["precision"]
     height, width = info["height"], info["width"]
@@ -171,13 +165,10 @@ def decode(frame: bytes) -> np.ndarray:
     shift = info["point_transform"]
     dtype = np.uint8 if precision <= 8 else np.uint16
 
-    if height == 0 or width == 0:
-        empty = np.zeros((height, width, components), dtype=dtype)
-        return empty[:, :, 0] if components == 1 else empty
-
     counts, symbols, symbol_counts, slot_tables = _tables(info)
     slot_comps = np.array(order, dtype=np.int32)
     scan = bytes(frame[info["scan_offset"]:])
+    check_scan(scan, height * width, info["restart_interval"])
 
     out = np.empty(height * width * components, dtype=dtype)
     status = _lib.plumbline_decode(
@@ -191,6 +182,9 @@ def decode(frame: bytes) -> np.ndarray:
 
     if status == _TRUNCATED:
         raise LosslessJpegError("the entropy-coded data ends before the image does")
+    if status == _BAD_CODE:
+        raise LosslessJpegError(
+            "the scan contains a code the frame's Huffman tables do not define")
     if status != _OK:
         raise LosslessJpegError(f"the native decoder refused the frame ({status})")
 

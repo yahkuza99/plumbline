@@ -54,6 +54,7 @@
 #define PLUMBLINE_BAD_TABLE      -3   /* counts promise more symbols than given */
 #define PLUMBLINE_BAD_SSSS       -4   /* a symbol above 16 is not a bit count */
 #define PLUMBLINE_BAD_ARGS       -5
+#define PLUMBLINE_BAD_CODE       -6   /* a code the scan's table does not define */
 
 #define WINDOW_BITS 16
 #define WINDOW_SIZE (1 << WINDOW_BITS)
@@ -83,10 +84,17 @@
 #define FIRST_BITS 12
 #define FIRST_SIZE (1 << FIRST_BITS)
 
+/* `undefined` is one flag shared by every table of a frame, raised when a
+ * window matches none of the table's codes. It is written only from the slow
+ * path — the fused path cannot reach a window with no code, because every
+ * window a code covers has a nonzero length — so the loop that carries the
+ * time never touches it. A table is allowed to leave code space unclaimed;
+ * a scan that lands in it is not the scan that table encoded. */
 typedef struct {
     int32_t  *fused;
     uint16_t *raw;
     int32_t  *first;
+    int32_t  *undefined;
 } table_t;
 
 static int build_table(const uint8_t counts[16], const uint8_t *symbols,
@@ -105,13 +113,16 @@ static int build_table(const uint8_t counts[16], const uint8_t *symbols,
             if (ssss > MAX_PRECISION)
                 return PLUMBLINE_BAD_SSSS;
 
-            /* The oracle assigns each code the window range it prefixes.
-             * An overfull table walks the code counter past the window; the
-             * oracle's numpy slices silently clip there, so clip here too. */
+            /* Each code owns the window range it prefixes. A table that
+             * declares more codes of a length than that length has room for
+             * walks the code counter past the last window, and every decoder
+             * loses a different symbol off the end. The caller rejects such a
+             * table before we are called; refuse it here too, so this library
+             * is safe for anyone who calls it without that Python in front. */
             int64_t low  = code << (16 - bits);
             int64_t high = low + ((int64_t)1 << (16 - bits));
-            if (low  > WINDOW_SIZE) low  = WINDOW_SIZE;
-            if (high > WINDOW_SIZE) high = WINDOW_SIZE;
+            if (high > WINDOW_SIZE)
+                return PLUMBLINE_BAD_TABLE;
 
             int32_t total = (ssss == MAX_PRECISION) ? bits : bits + ssss;
             int32_t span  = (1 << ssss) - 1;
@@ -231,9 +242,17 @@ static inline int64_t next_difference(const uint8_t *data, int64_t data_len,
     /* Code and mantissa are too long to share one window, but never too long
      * for the load: the pair takes at most 32 of the 57 bits held. SSSS = 16
      * cannot arrive here — its code alone always fits, so it always fuses.
-     * A window matching no code has length 0 and SSSS 0: it consumes nothing
-     * and yields zero, which is what the oracle's zeroed tables do. */
+     * A window matching no code is the one remaining way to land here, and its
+     * entry is zero throughout: these are not the bits this table encoded, so
+     * raise the flag and let the caller refuse rather than invent the rest of
+     * the image out of a stream it cannot read.
+     *
+     * The flag is OR-ed unconditionally rather than set behind an `if`. The
+     * branch measured 3% on the twelve-bit discs, where this path is taken
+     * often enough for a mispredict to matter; the unconditional store to a
+     * line already hot costs nothing measurable. */
     uint16_t pair = table->raw[window];
+    *table->undefined |= (pair == 0);
     int32_t length = pair >> 8;
     int32_t ssss = pair & 0xFF;
     int64_t difference = 0;
@@ -612,9 +631,11 @@ EXPORT int32_t plumbline_decode(const uint8_t *scan, int64_t scan_len,
     }
     table_t *slots = tables + ntables;
 
+    int32_t undefined = 0;
     uint8_t *cursor = arena;
     int64_t symbol_base = 0;
     for (int32_t entry = 0; entry < ntables; entry++) {
+        tables[entry].undefined = &undefined;
         tables[entry].fused = (int32_t *)cursor;
         cursor += WINDOW_SIZE * sizeof(int32_t);
         tables[entry].first = (int32_t *)cursor;
@@ -683,6 +704,8 @@ EXPORT int32_t plumbline_decode(const uint8_t *scan, int64_t scan_len,
      * looks decoded. */
     if (end > data_len * 8)
         status = PLUMBLINE_TRUNCATED;
+    else if (undefined)
+        status = PLUMBLINE_BAD_CODE;
 
 done:
     free(tables);

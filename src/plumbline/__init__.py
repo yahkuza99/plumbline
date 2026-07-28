@@ -22,9 +22,10 @@ installed — falling to the reference for the colour frames numba cannot take
 
 The choice is by *availability and capability only*. A frame the chosen
 decoder refuses (truncated, subsampled, malformed) is refused, never retried
-down the chain: the reference would quietly invent the tail of a truncated
-scan, and the house rule is to refuse rather than return an image that merely
-looks decoded.
+down the chain. All three refuse the same frames for the same reasons —
+`reference.check_frame`, `check_table` and `check_scan` are shared, not
+reimplemented — so a retry could only turn a diagnosis into an image that
+merely looks decoded.
 
     >>> import plumbline
     >>> pixels = plumbline.decode(frame)     # (h, w) or (h, w, components)

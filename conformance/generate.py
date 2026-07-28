@@ -220,12 +220,26 @@ def malformed_cases():
            build.greyscale_frame(WIDTH, HEIGHT, 8, data, over, [0, 1, 2]),
            "a Huffman table claiming more codes of a length than exist")
 
-    yield ("bad_ssss_beyond_precision",
+    # This was `bad_ssss_beyond_precision`, on the theory that a 4-bit frame
+    # cannot carry an SSSS of 12. It can: differences are taken modulo 2^16,
+    # not modulo 2^P, so any representative of the residue class is legal and
+    # encoders pick the shortest — the 10-bit Hologic mammogram in the test
+    # data lists SSSS = 12 and decodes identically under three decoders. What
+    # is wrong with this frame is the half of the code space its one 1-bit
+    # code leaves unclaimed, which the scan then lands in 30 times out of 35.
+    yield ("bad_code_not_in_table",
            build.greyscale_frame(WIDTH, HEIGHT, 4, data, [1] + [0] * 15, [12]),
-           "a table whose only symbol needs more bits than the precision allows")
+           "the scan uses codes the frame's only Huffman table never defines")
 
+    # Spliced in rather than edited over an existing stuffed pair: whether this
+    # scan happens to contain a 0xFF at all depends on the seed, and the
+    # `.replace` this case used to do quietly matched nothing and published a
+    # perfectly valid frame as a must-refuse case. Splicing always breaks it.
+    half = len(data) // 2
     yield ("bad_unstuffed_ff",
-           good[:-2].replace(b"\xff\x00", b"\xff\x01", 1) + build.marker(0xD9),
+           build.greyscale_frame(WIDTH, HEIGHT, 8,
+                                 data[:half] + b"\xFF\x01" + data[half:],
+                                 *plan[0]),
            "a 0xFF inside the entropy data followed by something that is "
            "neither stuffing nor a legal marker")
 

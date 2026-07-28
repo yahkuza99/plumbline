@@ -11,10 +11,10 @@ and frames built by hand for the details that decide correctness. On top of
 the turbo suite, colour frames are exercised too — this decoder takes the
 interleaved multi-component frames that `turbo` refuses.
 
-The one place the two decoders deliberately part company is a truncated scan:
-the oracle reads off the end into its own padding and returns an image whose
-tail it invented; the native decoder notices and refuses. Refusing is always
-allowed here. Returning pixels the oracle could not produce is not.
+The two decoders no longer part company anywhere: a truncated scan, and a code
+the scan's table never defines, are refused by both. Refusing is always allowed
+here — but only together. One decoder returning pixels the other will not is
+the failure this suite exists to catch.
 
 The whole module is skipped where the shared library has not been built
 (`python native/build.py`).
@@ -128,6 +128,26 @@ def _scan_for(samples: int, seed: int) -> bytes:
                                        dtype=np.uint8).tobytes())
 
 
+def _restarted(samples: int, mcus: int, interval: int, seed: int) -> bytes:
+    """Random pieces joined by the restart markers a conforming frame carries.
+
+    One marker per interval boundary and no more, cycling RST0-RST7. Both are
+    load-bearing: a frame whose markers run out before its intervals do, or
+    whose markers skip a number, is one where bytes went missing, and both
+    decoders refuse it rather than reading on into the next interval.
+
+    Each piece is long enough to finish the whole image on its own, so a
+    difference between the decoders is a difference in how they read the
+    stream and never one of them running dry first.
+    """
+    pieces = [_scan_for(samples, seed + piece)
+              for piece in range(-(-mcus // interval))]
+    out = pieces[0]
+    for index, piece in enumerate(pieces[1:]):
+        out += bytes([0xFF, 0xD0 + (index & 7)]) + piece
+    return out
+
+
 def _decoded_twice(frame: bytes) -> tuple:
     """Both decoders' answers: an array each, or the exception type raised."""
     try:
@@ -147,6 +167,14 @@ def _identical(frame: bytes) -> bool:
     assert isinstance(fast, np.ndarray), f"the native decoder refused this frame: {fast}"
     return (slow.dtype == fast.dtype and slow.shape == fast.shape
             and np.array_equal(slow, fast))
+
+
+def _refused_together(frame: bytes) -> bool:
+    """Both decoders must refuse — agreeing on a refusal is agreeing."""
+    slow, fast = _decoded_twice(frame)
+    assert not isinstance(slow, np.ndarray), "the oracle returned pixels for this frame"
+    assert not isinstance(fast, np.ndarray), "the native decoder returned pixels"
+    return slow is LosslessJpegError and fast is LosslessJpegError
 
 
 # symbol 0 and symbol 16 are the two one-bit codes "0" and "1"
@@ -246,7 +274,11 @@ class TestColourFrames:
         assert _identical(frame)
 
     def test_each_component_uses_its_own_huffman_table(self):
-        second = ([0, 2] + [0] * 14, [0, 16])  # the same symbols, two-bit codes
+        # The same two symbols, but on two-bit codes, so reading a component
+        # with the wrong table desynchronises the stream rather than merely
+        # renaming a symbol. Padded to four codes because a table that claims
+        # only half its code space is one a random scan falls out of.
+        second = ([0, 4] + [0] * 14, [0, 16, 1, 2])
         frame = _color_frame(2, 2, 12, _scan_for(12, 5),
                              {0: self._SMALL, 1: second},
                              [(1, 0), (2, 1), (3, 0)])
@@ -313,9 +345,13 @@ class TestRefusesRatherThanGuesses:
         with pytest.raises(LosslessJpegError):
             native.decode(frame)
 
-    def test_a_frame_with_no_pixels_is_not_a_crash(self):
-        assert native.decode(
-            _frame(0, 0, 8, b"", _COUNTS, _SYMBOLS)).shape == (0, 0)
+    def test_a_frame_with_no_pixels_is_refused_not_returned_empty(self):
+        """T.81 §B.2.2 gives X a range of 1..65535: a line of no samples is not
+        a small image, it is a frame that does not describe one. Returning an
+        empty array says the file held no pixels, which is a different claim
+        from the one the caller can act on."""
+        with pytest.raises(LosslessJpegError):
+            native.decode(_frame(0, 0, 8, b"", _COUNTS, _SYMBOLS))
 
     def test_a_truncated_huffman_table_is_refused(self):
         counts = [0] * 15 + [17]               # promises seventeen symbols
@@ -341,16 +377,15 @@ def test_random_scans_decode_identically(shape, precision, predictor):
     seed = precision * 64 + predictor * 8 + len(shape)
     for width, height, interval in ((7, 5, 0), (7, 5, 7), (7, 5, 3), (9, 1, 3)):
         for shift in ((0, 1) if precision > 1 else (0,)):
-            scan = _scan_for(width * height, seed)
-            if interval:
-                # Real restart markers, each piece long enough to finish the
-                # image on its own: the markers may run out before the intervals
-                # do, and then both decoders must read straight on.
-                pieces = [_scan_for(width * height, seed + piece) for piece in range(9)]
-                scan = bytes([0xFF, 0xD0]).join(pieces)
+            scan = (_restarted(width * height, width * height, interval, seed)
+                    if interval else _scan_for(width * height, seed))
             frame = _frame(width, height, precision, scan, counts, symbols,
                            predictor, interval, shift)
-            assert _identical(frame), (shape, precision, predictor, width, interval, shift)
+            # `holes` leaves half the code space unclaimed and random bits land
+            # in it, so there is no image to agree on — only the refusal, which
+            # both decoders must reach.
+            agree = _refused_together if shape == "holes" else _identical
+            assert agree(frame), (shape, precision, predictor, width, interval, shift)
 
 
 @pytest.mark.parametrize("shape", ["staircase", "narrow", "holes"])
@@ -363,16 +398,16 @@ def test_random_colour_scans_decode_identically(shape, precision, predictor):
     seed = precision * 8 + predictor
     for ncomp, interval in ((2, 0), (3, 0), (3, 4), (4, 2)):
         samples = 4 * 4 * ncomp
-        scan = _scan_for(samples, seed + ncomp)
-        if interval:
-            pieces = [_scan_for(samples, seed + ncomp + piece + 1)
-                      for piece in range(9)]
-            scan = bytes([0xFF, 0xD0]).join(pieces)
+        # A restart interval counts MCUs, and with 1x1 sampling one MCU is one
+        # pixel however many components it carries.
+        scan = (_restarted(samples, 4 * 4, interval, seed + ncomp + 1)
+                if interval else _scan_for(samples, seed + ncomp))
         components = [(c + 1, 1 if c == 1 else 0) for c in range(ncomp)]
         frame = _color_frame(4, 4, precision, scan,
                              {0: (counts, symbols), 1: other}, components,
                              predictor, interval)
-        assert _identical(frame), (shape, precision, predictor, ncomp, interval)
+        agree = _refused_together if shape == "holes" else _identical
+        assert agree(frame), (shape, precision, predictor, ncomp, interval)
 
 
 # --------------------------------------------------------------------------- #

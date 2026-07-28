@@ -21578,9 +21578,27 @@
    "must": "refuse"
   },
   {
+   "name": "bad_dri_without_rst",
+   "file": "corpus/bad_dri_without_rst.jpg",
+   "why": "a restart interval is declared but no RSTn marker is ever emitted",
+   "must": "refuse"
+  },
+  {
+   "name": "bad_rst_out_of_order",
+   "file": "corpus/bad_rst_out_of_order.jpg",
+   "why": "restart markers must cycle RST0-RST7 in order; this one jumps",
+   "must": "refuse"
+  },
+  {
    "name": "bad_subsampled",
    "file": "corpus/bad_subsampled.jpg",
    "why": "2x1 sampling \u2014 not supported, and guessing at it would misplace every sample",
+   "must": "refuse"
+  },
+  {
+   "name": "bad_zero_width",
+   "file": "corpus/bad_zero_width.jpg",
+   "why": "an image zero pixels wide",
    "must": "refuse"
   },
   {
@@ -21599,6 +21617,24 @@
    "name": "bad_predictor_eight",
    "file": "corpus/bad_predictor_eight.jpg",
    "why": "predictor 8 does not exist",
+   "must": "refuse"
+  },
+  {
+   "name": "bad_table_oversubscribed",
+   "file": "corpus/bad_table_oversubscribed.jpg",
+   "why": "a Huffman table claiming more codes of a length than exist",
+   "must": "refuse"
+  },
+  {
+   "name": "bad_code_not_in_table",
+   "file": "corpus/bad_code_not_in_table.jpg",
+   "why": "the scan uses codes the frame's only Huffman table never defines",
+   "must": "refuse"
+  },
+  {
+   "name": "bad_unstuffed_ff",
+   "file": "corpus/bad_unstuffed_ff.jpg",
+   "why": "a 0xFF inside the entropy data followed by something that is neither stuffing nor a legal marker",
    "must": "refuse"
   },
   {

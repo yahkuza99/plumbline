@@ -25,6 +25,11 @@ every RGB ultrasound disc seen so far takes) are decoded with per-component
 predictor state and per-component Huffman tables. Subsampled or non-interleaved
 frames are refused, never guessed at.
 
+`check_frame`, `check_table` and `check_scan` hold everything a frame must
+satisfy before a bit is read. They live here rather than in each decoder
+because `turbo` and `native` import them: a check present in only one decoder
+is a decoder that disagrees with the oracle about which files exist.
+
 This module is the readable reference: correct, dependency-free, and slow. It is
 the oracle the accelerated path is tested against.
 """
@@ -39,12 +44,166 @@ SOI = 0xD8
 EOI = 0xD9
 SOS = 0xDA
 DRI = 0xDD
+RST0 = 0xD0
+RST7 = 0xD7
 
 MAX_PRECISION = 16
 
 
 class LosslessJpegError(ValueError):
     """The frame is not lossless JPEG, or is malformed."""
+
+
+# --------------------------------------------------------------------------- #
+# what a frame must satisfy before a single bit is read
+#
+# These three live here rather than in each decoder because all three decoders
+# must refuse the same frames for the same reasons. `native` and `turbo` call
+# them too; a check that exists in only one of them is a decoder that disagrees
+# with the oracle, which is the one thing this project cannot have.
+# --------------------------------------------------------------------------- #
+
+def check_frame(info: dict) -> None:
+    """Refuse header combinations no conforming frame can carry."""
+    precision = info["precision"]
+    if not 1 <= precision <= MAX_PRECISION:
+        raise LosslessJpegError(f"precision {precision} is out of range")
+    if not 1 <= info["predictor"] <= 7:
+        raise LosslessJpegError(f"predictor {info['predictor']} is not defined")
+    if info["point_transform"] >= precision:
+        raise LosslessJpegError("point transform is larger than the precision")
+
+    # ITU-T T.81 §B.2.2 table B.2: X, the number of samples per line, runs
+    # 1..65535. Zero samples per line is not an empty image — the frame still
+    # claims Y lines of them — so there is nothing here to return and nothing
+    # to guess at either.
+    if info["width"] < 1:
+        raise LosslessJpegError("the frame is zero samples wide (T.81 §B.2.2 "
+                                "allows X = 1..65535)")
+    # Y = 0 is legal in T.81 §B.2.2 only because a DNL marker supplies the line
+    # count later. This decoder does not implement DNL, so a frame that defers
+    # its height is a frame whose height we do not know.
+    if info["height"] < 1:
+        raise LosslessJpegError("the frame declares no lines; its height would "
+                                "come from a DNL marker, which is not supported")
+
+
+def check_table(counts: list[int], symbols: list[int]) -> None:
+    """Refuse a Huffman table that cannot be the one the encoder used.
+
+    Three ways a table lies about itself, all of which a permissive decoder
+    absorbs into plausible wrong pixels rather than a diagnosis:
+
+    * it promises more symbols than the segment carries;
+    * it promises more codes of some length than that length has room for
+      (Kraft sum above one). The extra codes have nowhere to live, so the
+      assignment every decoder rebuilds from T.81 §B.2.4.2 runs off the end
+      and each decoder loses a different symbol;
+    * it lists an SSSS above 16, which is not a mantissa width at all.
+
+    What is deliberately *not* checked is SSSS against the frame's precision.
+    It looks like it should hold — a 10-bit sample surely cannot differ from
+    its prediction by twelve bits — and it does not: differences are taken
+    modulo 2^16 rather than modulo 2^P, so any representative of the residue
+    class is legal and encoders pick whichever codes shortest. The Hologic
+    mammogram in the test data is 10-bit and its table lists SSSS = 12; two
+    independent decoders and this one agree on its pixels to the bit. A check
+    that rejected it would refuse a real diagnostic image to catch a synthetic
+    one, which is the wrong trade in a project whose reason to exist is that
+    the alternative decoder was GPL rather than that it was wrong.
+    """
+    total = sum(counts)
+    if len(counts) != 16 or total > len(symbols):
+        raise LosslessJpegError("Huffman table is truncated")
+
+    code = 0
+    for bits in range(1, 17):
+        code += counts[bits - 1]
+        if code > (1 << bits):
+            raise LosslessJpegError(
+                f"Huffman table is over-subscribed: {code} codes of {bits} "
+                f"bits or fewer, where only {1 << bits} can exist")
+        code <<= 1
+
+    for symbol in symbols[:total]:
+        if symbol > MAX_PRECISION:
+            raise LosslessJpegError(f"SSSS={symbol} is out of range")
+
+
+def check_scan(scan: bytes, mcus: int, interval: int) -> None:
+    """Refuse an entropy-coded segment that is not the one the encoder wrote.
+
+    Only the 0xFF bytes are looked at, and every 0xFF in the segment is one:
+    the byte stuffed after a data 0xFF is 0x00, and no marker code is 0xFF, so
+    a 0xFF is never the second byte of a pair except in a run of fill bytes,
+    where it opens a pair of its own. That makes the classification below
+    position-independent, and one vectorised pass enough.
+
+    That pass costs the accelerated decoders about 6% on the test discs (5 ms
+    on an 8.4 MB scan, against ~73 ms to decode it), because it reads every
+    byte a second time. `native`'s C destuffing already walks the same 0xFF
+    bytes and could report all of this for nothing, and the 6% is the price of
+    not writing this logic twice in two languages where the two copies could
+    drift. Correctness first is the whole premise; if that ever stops being
+    the right trade, this is where to look.
+    """
+    data = np.frombuffer(scan, dtype=np.uint8)
+    marks = np.flatnonzero(data == 0xFF)
+    if marks.size:
+        # A 0xFF as the very last byte has no partner; the decoders keep it as
+        # data, so read its follower as 0x00 and let it pass as stuffing.
+        following = np.where(marks + 1 < data.size,
+                             data[np.minimum(marks + 1, data.size - 1)], 0)
+    else:
+        following = marks
+
+    restart = (following >= RST0) & (following <= RST7)
+    # A marker of any other kind ends the segment: everything past it belongs
+    # to the next one and is none of this scan's business. Fill bytes (0xFF)
+    # only ever precede such a marker, so they end it too.
+    ends = ~restart & (following >= 0xC0)
+    stop = int(np.argmax(ends)) if ends.any() else marks.size
+
+    inside = following[:stop]
+    restart = restart[:stop]
+    # T.81 §B.1.1.5: the encoder stuffs a zero byte after every 0xFF it writes,
+    # so inside the segment a 0xFF is followed by 0x00, by an RSTn, or by the
+    # marker that ends it. Anything else means these are not the encoder's
+    # bytes, and a decoder that stops reading there invents the rest of the
+    # image.
+    stray = inside[(inside != 0x00) & ~restart]
+    if stray.size:
+        raise LosslessJpegError(
+            f"0xFF 0x{int(stray[0]):02X} inside the entropy-coded data is "
+            "neither byte stuffing nor a marker")
+
+    found = int(restart.sum())
+    if found:
+        # RSTn carries a modulo-8 counter for exactly one purpose: to let a
+        # decoder notice that markers were lost. A jump in the sequence says
+        # the bytes between here and the last marker are not the bytes the
+        # encoder wrote, whatever they decode to.
+        order = (inside[restart].astype(np.int64) - RST0)
+        expected = np.arange(found, dtype=np.int64) % 8
+        wrong = np.flatnonzero(order != expected)
+        if wrong.size:
+            index = int(wrong[0])
+            raise LosslessJpegError(
+                f"restart marker {index} is RST{int(order[index])}, not "
+                f"RST{int(expected[index])}: markers must cycle RST0-RST7 in "
+                "order, so one out of sequence means some were lost")
+
+    if interval > 0:
+        # With 1x1 sampling one MCU is one pixel, so an interval that divides
+        # the image into N pieces needs N-1 markers to say where they start.
+        # Fewer, and every sample after the first missing one is decoded from
+        # bits belonging to somewhere else.
+        required = -(-mcus // interval) - 1
+        if found < required:
+            raise LosslessJpegError(
+                f"the frame declares a restart interval of {interval} but "
+                f"carries {found} of the {required} restart markers that "
+                "interval needs")
 
 
 class _Huffman:
@@ -71,6 +230,9 @@ class _Huffman:
             code <<= 1
 
 
+_PEEK_PADDING = 4        # spare bytes so a sixteen-bit peek cannot run off the end
+
+
 class _Bits:
     """The entropy-coded segment, with JPEG's byte stuffing already removed."""
 
@@ -94,8 +256,10 @@ class _Bits:
             else:
                 break                     # EOI, or the next marker
         # Spare bytes so a sixteen-bit peek near the end cannot run off the
-        # buffer; nothing real is ever read from them.
-        out.extend(b"\x00" * 4)
+        # buffer; nothing real is ever read from them, and `supplied` is what
+        # the frame actually carried.
+        self.supplied = len(out) * 8
+        out.extend(b"\x00" * _PEEK_PADDING)
         self.data = np.frombuffer(bytes(out), dtype=np.uint8)
         self.bit = 0
 
@@ -224,6 +388,7 @@ def decode(frame: bytes) -> np.ndarray:
     components = info.get("components", 0)
     if components < 1:
         raise LosslessJpegError("frame declares no components")
+    check_frame(info)
     for horizontal, vertical in info.get("sampling", []):
         if (horizontal, vertical) != (1, 1):
             raise LosslessJpegError(
@@ -256,9 +421,14 @@ def decode(frame: bytes) -> np.ndarray:
         if identifier not in info["tables"]:
             raise LosslessJpegError(f"Huffman table {identifier} is missing")
         if identifier not in built:
+            check_table(*info["tables"][identifier])
             built[identifier] = _Huffman(*info["tables"][identifier])
         tables.append(built[identifier])
+
+    check_scan(frame[info["scan_offset"]:], height * width, interval)
     bits = _Bits(frame[info["scan_offset"]:])
+    if bits.data.size <= _PEEK_PADDING:        # only the peek padding is left
+        raise LosslessJpegError("there is no entropy-coded data in the scan")
 
     out = np.zeros((height, width, components), dtype=np.int64)
     default = 1 << (precision - 1 - shift)
@@ -285,7 +455,20 @@ def decode(frame: bytes) -> np.ndarray:
                 table = tables[scan_slot]
                 peek = bits.peek16()
                 size = int(table.symbol[peek])
-                bits.skip(int(table.length[peek]))
+                length = int(table.length[peek])
+                # A table need not claim the whole code space — encoders list
+                # only the SSSS values they used, and T.81 §B.2.4.2 does not
+                # require otherwise. But the bits in front of us matching none
+                # of the codes it *does* claim means these are not the bits
+                # that table encoded. Consuming nothing and calling the
+                # difference zero, which is what a table of zeros quietly
+                # does, produces a whole image out of a stream we cannot read.
+                if length == 0:
+                    raise LosslessJpegError(
+                        f"the scan contains a code Huffman table "
+                        f"{info['table_ids'][scan_slot]} does not define "
+                        f"(at bit {bits.bit} of the entropy-coded data)")
+                bits.skip(length)
                 diff = bits.difference(size)
 
                 if restarted or (row == 0 and col == 0):
@@ -300,6 +483,13 @@ def decode(frame: bytes) -> np.ndarray:
                                           int(out[row - 1, col, comp]),
                                           int(out[row - 1, col - 1, comp]))
                 out[row, col, comp] = (prediction + diff) % modulo
+
+    # A well-formed scan never asks for a bit the frame does not contain. When
+    # it does, the image is truncated and every sample after the break was read
+    # out of the padding above — so refuse, as `turbo` and `native` already do,
+    # rather than hand back an image whose tail this decoder invented.
+    if bits.bit > bits.supplied:
+        raise LosslessJpegError("the entropy-coded data ends before the image does")
 
     if shift:
         out <<= shift
