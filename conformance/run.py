@@ -94,7 +94,13 @@ def check(decode, case: dict) -> tuple[str, str]:
     try:
         got = decode(frame)
     except Exception as error:
+        # For a malformed case, refusing *is* the correct answer.
+        if case.get("must") == "refuse":
+            return "exact", "refused, as required"
         return "refused", type(error).__name__
+
+    if case.get("must") == "refuse":
+        return "WRONG", "returned an image for a frame that has no right answer"
 
     got = np.squeeze(np.asarray(got))
     expected_shape = tuple(d for d in case["shape"] if d != 1)

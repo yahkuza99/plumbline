@@ -48,9 +48,14 @@ def huffman_lengths(frequencies: dict[int, int]) -> dict[int, int]:
     decoder should accept and the corpus would be asserting nonsense again.
     """
     if len(frequencies) == 1:
-        # A one-symbol alphabet still needs a bit to read: a zero-length code
-        # would leave the decoder unable to advance.
-        return {next(iter(frequencies)): 1}
+        # A one-symbol alphabet needs a bit to read — a zero-length code would
+        # leave the decoder unable to advance — but a lone 1-bit code leaves
+        # half the code space unclaimed, and an incomplete table is something
+        # decoders are entitled to reject. Pair it with an unused symbol so
+        # the table is complete and the frame is unambiguously legal.
+        only = next(iter(frequencies))
+        spare = 1 if only == 0 else 0
+        return {only: 1, spare: 1}
 
     heap = [(count, index, symbol) for index, (symbol, count)
             in enumerate(sorted(frequencies.items()))]

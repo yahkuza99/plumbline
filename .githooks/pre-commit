@@ -27,7 +27,7 @@ for f in $staged; do
     # carrying these is either an image or something that quotes one.
     if head -c 4096 "$f" 2>/dev/null | grep -qa '1\.2\.840\.10008\.1\.2'; then
         case "$f" in
-            *.py|*.md|*.c|*.h|*.toml|*.yml|*.yaml|*.txt|*.cfg) ;;   # source may name a UID
+            *.py|*.md|*.c|*.h|*.toml|*.yml|*.yaml|*.txt|*.cfg|*.json) ;;   # source may name a UID
             *) blocked="$blocked  $f  (contains a DICOM transfer syntax UID)\n" ;;
         esac
     fi
