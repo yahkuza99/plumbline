@@ -74,6 +74,17 @@ def _builtin_decoders() -> dict[str, object]:
     except Exception:
         pass
 
+    # libjpeg-turbo. It shares no code, no author and no reading of the
+    # standard with this project, which makes it the most useful witness
+    # available — and it was sitting in the same package all along, imported
+    # elsewhere as an availability probe and then thrown away.
+    try:
+        from imagecodecs import jpeg8_decode
+
+        found["libjpeg-turbo"] = jpeg8_decode
+    except Exception:
+        pass
+
     return found
 
 
@@ -137,7 +148,8 @@ def main() -> None:
                   for name in args.decoder}
     else:
         chosen = builtin
-        for name in ("plumbline", "pylibjpeg", "imagecodecs.ljpeg", "imagecodecs.jpegsof3"):
+        for name in ("plumbline", "pylibjpeg", "imagecodecs.ljpeg",
+                     "imagecodecs.jpegsof3", "libjpeg-turbo"):
             if name not in builtin:
                 print(f"  {name}: not installed here")
         print()

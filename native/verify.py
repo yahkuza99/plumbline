@@ -50,22 +50,27 @@ def main() -> int:
         count = int(getattr(dataset, "NumberOfFrames", 1) or 1)
         samples = int(getattr(dataset, "SamplesPerPixel", 1) or 1)
         files += 1
-        reference = "oracle"
+        # `against` is a label for the report. It used to be called
+        # `reference`, which shadowed the imported module — so the else branch
+        # below called `str.decode` and raised AttributeError on every colour
+        # frame, and on every frame at all once numba stopped importing. The
+        # script that checks the decoder was itself unchecked.
+        against = "oracle"
         for index, frame in enumerate(
                 generate_pixel_data_frame(dataset.PixelData, count)):
             mine = native.decode(frame)
             if samples == 1 and turbo.AVAILABLE:
                 other = turbo.decode(frame)
-                reference = "turbo"
+                against = "turbo"
             else:
                 other = reference.decode(frame)
-                reference = "oracle"
+                against = "oracle"
             if not (mine.dtype == other.dtype and mine.shape == other.shape
                     and np.array_equal(mine, other)):
-                print(f"MISMATCH {path.name} frame {index} against {reference}")
+                print(f"MISMATCH {path.name} frame {index} against {against}")
                 return 1
             frames += 1
-        print(f"ok {path.name}: {count} frame(s) against {reference}")
+        print(f"ok {path.name}: {count} frame(s) against {against}")
 
     print(f"all identical: {frames} frames across {files} files")
     return 0
