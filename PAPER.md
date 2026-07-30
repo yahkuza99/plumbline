@@ -11,11 +11,13 @@ imaging discs, and a decoder for it can fail in a way nothing downstream can
 detect: it returns an array of the right shape and dtype, containing the wrong
 numbers. We report three results from building a decoder for this format.
 
-First, a widely deployed implementation returns silently wrong pixels on every
-frame carrying restart markers — 6 of 11 discs in an initial sample, 17% to
-99.9% of samples affected, with no error raised. The correlation with restart
-markers is total: every frame that has them is wrong, every frame without them
-is correct.
+First, `imagecodecs` 2026.6.26 returns silently wrong pixels through its
+`ljpeg` codec on every frame in which restart markers are actually emitted:
+**840 of 840** synthetic frames covering all seven predictors and every
+precision from 2 to 16 bits, and **840 of 840** correct where no marker is
+emitted. No exception is raised and no warning is issued — verified with
+warnings promoted to errors. Those frames are committed here, so the result
+can be reproduced without access to any clinical data.
 
 Second, and more instructive, *our own* three independent implementations
 shared two misreadings of Annex H and agreed with each other perfectly while
@@ -27,7 +29,7 @@ implementation sharing no code with ours.
 Third, we show that the legal parameter space of this format is small enough
 to enumerate rather than sample — 105 combinations of precision and predictor,
 swept exhaustively — and that doing so is what surfaced the two bugs above. A
-corpus of 61,921 real frames from 105 scanner configurations did not, because
+corpus of 61,921 real frames from 105 scanner builds did not, because
 every one of them used a single predictor.
 
 We release the decoder under Apache-2.0 and the conformance corpus alongside
@@ -61,57 +63,79 @@ invisible for years.
 
 ## 2. A silent failure in a deployed decoder
 
-### 2.1 Observation
+### 2.1 What was tested
 
-Decoding an initial sample of 11 frames from 8 manufacturers with three
-implementations produced a clean split. Two agreed on all 11. The third
-returned different pixels on 6 of them, raising nothing:
+`imagecodecs` 2026.6.26, codec `ljpeg` (a vendored copy of `liblj92`), on
+Windows 11 / Python 3.12 / NumPy 1.26. Every frame below is in
+`conformance/corpus/` in this repository; nothing here depends on data that
+cannot be redistributed.
 
-| affected samples | frames |
-|---:|:---|
-| 99.9% | 2 |
-| 99.0% | 1 |
-| 96.3% | 1 |
-| 33.4% | 1 |
-| 17.3% | 1 |
+### 2.2 Result, and the variable that separates it
 
-### 2.2 The discriminating variable
+Running the 1,691 conforming cases and partitioning on the restart interval:
 
-Partitioning the same 11 frames on the presence of a DRI marker separates them
-completely:
+| restart interval | RSTn actually emitted | frames | exact | wrong |
+|---|---|---:|---:|---:|
+| none | no | 420 | **420** | 0 |
+| every row | yes | 420 | 0 | **420** |
+| every 2 rows | yes | 420 | 0 | **420** |
+| wider than the image | **no** — DRI present, no marker ever emitted | 420 | **420** | 0 |
 
-| | frames | wrong |
-|---|---:|---:|
-| carries restart markers | 6 | **6** |
-| no restart markers | 5 | 0 |
+The separation is total in both directions, across all seven predictors and
+every precision from 2 to 16 bits.
 
-No exceptions in either direction. A correlation this clean is not a
-distribution of unrelated defects; it is one defect with one cause.
+The fourth row is the control. Those frames declare a restart interval in the
+header but are small enough that no `RSTn` is ever written, and they decode
+correctly. The variable is therefore **the presence of an emitted marker in
+the entropy-coded segment**, not the presence of a `DRI` header — which rules
+out an explanation based on header parsing, and rules out any confound with
+vendor, bit depth or image content, since a single generator produced all
+1,680 frames and varies only this.
 
-### 2.3 Attribution
+### 2.3 Root cause
 
-Two independent implementations agreed with our reference on all 11 frames.
-That is the relevant evidence — not our confidence in our own code, but that
-two decoders sharing no lineage with ours produced identical output. On the
-disagreeing frames the vote is 3–1.
+`liblj92` has no case for marker `0xDD`, so the restart interval is never
+read. `nextdiff()` then treats every `0xFF` byte in the entropy data as byte
+stuffing, so an `RSTn` marker is consumed as two data bytes: eight bits of
+noise enter the bitstream and the decoder never re-aligns to the byte
+boundary the standard requires after a restart. From the first marker onward
+the output is a decode of a different bitstream. Because the predictor
+carries the error forward, the result is structured rather than random — it
+resembles image noise.
 
-A further detail is worth recording. The same package ships a second
-lossless-JPEG decoder, and *that* one refuses exactly the 6 frames the first
-one silently mis-decodes. The knowledge that these files are not handled is
-already present in the codebase; the default path simply does not consult it.
+### 2.4 Nothing is raised
 
-### 2.4 Reachability
+`native/compare.py` suppresses warnings at module scope, which would hide a
+diagnostic if one were issued. Re-running with warnings promoted to errors
+and captured explicitly produces **none**. The absence of a signal is a
+property of the decoder, not of the harness — a distinction worth making
+explicitly, because the harness was capable of hiding exactly this.
+
+### 2.5 Corroboration
+
+Two implementations sharing no code with this project decode the same frames:
+`pylibjpeg-libjpeg` 2.4.0 agrees with our reference on every conforming case
+it accepts, and `libjpeg-turbo` (`imagecodecs.jpeg8_decode`) agrees bit for
+bit on all 1,691. A third — `imagecodecs.jpegsof3`, in the same package as
+the affected codec — **refuses** the frames that `ljpeg` mis-decodes rather
+than returning pixels. The knowledge that these files are not handled is
+already present in that codebase; the default path does not consult it.
+
+### 2.6 Reachability
 
 Stated precisely, because overstatement here would be its own kind of error.
-The defect is reachable only by calling the affected function directly. The
-package's format-detecting entry point routes these frames elsewhere and
-decodes them correctly, and pydicom does not select this backend for these
-transfer syntaxes.
 
-The population that calls it directly, however, is the population that already
-knows its data is lossless JPEG — which is to say, the medical imaging one.
+The defect is reachable only by calling `ljpeg_decode` directly.
+`imagecodecs.imread`, which detects the format, routes these frames to
+libjpeg-turbo and decodes them correctly, and pydicom does not select this
+backend for these transfer syntaxes. The population that calls it directly,
+however, is the population that already knows its data is lossless JPEG.
 
----
+### 2.7 Disclosure status
+
+**Not yet reported upstream at the time of writing.** This is a deviation
+from the practice this project asks of others in its own `SECURITY.md`, and
+it is recorded here rather than omitted.
 
 ## 3. Method
 
@@ -155,15 +179,29 @@ interval announced and never emitted, restart markers out of sequence,
 subsampling, precision zero.
 
 For these the corpus asserts only that a decoder must **not** return an image.
-They have no correct output, so any output is incorrect. Running the corpus
-against deployed decoders, one returned images for four of them — including a
-0×0 array — and one **segfaulted**, a memory-safety failure reachable from an
-untrusted file.
+They have no correct output, so any output is incorrect. Of the 16, the number
+each deployed decoder returns pixels for:
+
+| decoder | returns an image | refuses |
+|---|---:|---:|
+| `imagecodecs.ljpeg` | 11 | 5 |
+| `imagecodecs.jpegsof3` | 8 | 8 |
+| `pylibjpeg-libjpeg` | 6 | 10 |
+| `libjpeg-turbo` | 6 | 10 |
+| plumbline | **0** | **16** |
+
+Refusing malformed input is a policy choice rather than a correctness
+property, and reasonable implementations differ. It is reported because a
+decoder's behaviour on input it cannot read is exactly what a caller handling
+files of unknown origin needs to know, and it is not documented anywhere else.
+
+One further observation is recorded separately in §6 rather than counted here,
+because the instrument cannot measure it.
 
 ### 3.5 Real files
 
-61,921 lossless-JPEG frames — 26.1 billion pixels, 105 scanner configurations
-from 27 manufacturers — were decoded to detect refusals, crashes and hangs.
+61,921 lossless-JPEG frames — 26.1 billion pixels, 105 distinct
+(manufacturer, model, modality) builds from 27 manufacturers — were decoded to detect refusals, crashes and hangs.
 Comparing every frame against the pure-Python reference is impractical at
 ~0.15 Mpx/s, so one frame from each distinct parameter combination was
 re-decoded and compared bit for bit.
@@ -183,30 +221,64 @@ re-decoded and compared bit for bit.
 
 ### 4.2 Cross-implementation agreement
 
-On the same 1,707 cases, before and after the corrections of §5:
+Before and after the corrections of §5. **These are two different corpora**,
+not one corpus scored twice: the earlier one held 1,706 cases and swept
+restart intervals of 1, 3 and 40 pixels — values §5 establishes are not legal
+— and the current one holds 1,707 and sweeps whole rows.
 
-| decoder | exact, before | exact, after |
+| decoder | before, on the old corpus | after, on the current one |
 |---|---:|---:|
-| independent implementation A | 234 | **1,690** |
-| plumbline | 1,707 | 1,707 |
+| `pylibjpeg-libjpeg` 2.4.0 | 234 / 1,706 | **1,690** / 1,707 |
+| `libjpeg-turbo` | — | **1,701** / 1,707 |
+
+Reproduce the "before" column with:
+
+```sh
+git archive f77606d^ conformance | tar -x -C /tmp/old
+python /tmp/old/conformance/run.py --decoder pylibjpeg
+```
+
+The 17 cases `pylibjpeg` still disagrees on are its own gaps: 11 where it does
+not apply the point transform and returns saturated values, and 6 malformed
+frames it accepts. `libjpeg-turbo` disagrees on 6, all of them malformed
+frames it accepts — **it matches on every one of the 1,691 conforming cases,
+including the point transform.**
+
+**plumbline scores 1,707 of 1,707, and that number is not evidence.**
+`conformance/generate.py` writes a case to the corpus only after the reference
+implementation has decoded it to the expected image, or refused it where a
+refusal is required. A case this decoder fails therefore cannot enter the
+corpus, and the score is a property of how the corpus is built rather than a
+measurement of the decoder. (In the current build nothing was withheld: 15
+precisions × 7 predictors × 4 component counts × 4 restart values ÷ 4
+patterns + 11 point-transform cases = 1,691, which is the whole set.) The
+scores that carry information are the ones from decoders we did not write.
 
 The 17 residual disagreements are that implementation's own gaps: 11 frames
 where it does not apply the point transform and returns saturated values, and
 6 malformed frames it accepts.
 
-**This number is the paper's central measurement.** It was chosen as the
-success criterion *before* the fix was written, precisely so that the fix could
-fail it. A change that repaired our reading of the standard had to make an
-unrelated implementation agree with us more often; nothing about our own test
-suite could have demonstrated that.
+**This is the paper's central measurement.** It was fixed as the success
+criterion *before* the change was written, precisely so that the change could
+fail it: a correction to our reading of the standard had to make an unrelated
+implementation agree with us more often. Nothing produced by our own test
+suite could have demonstrated that, as §4.2's last paragraph and §5 both show.
 
 ### 4.3 The price of refusing
 
 Validating the entropy-coded segment before decoding it — checking marker
 sequence, byte stuffing, and restart-marker count — costs about **9%** of
-throughput (135.5 → 123.9 Mpx/s median, best of seven). The validation walks
-the scan a second time to find `0xFF` bytes that the C destuffing pass already
-visits and could report for free.
+throughput (135.5 → 123.9 Mpx/s median). The validation walks the scan a
+second time to find `0xFF` bytes that the C destuffing pass already visits and
+could report for free.
+
+That figure was obtained by disabling `reference.check_scan` by hand and
+re-running the benchmark, which is not something the repository can do on its
+own: **there is no flag for it, so the measurement is not reproducible from a
+clean checkout.** It is reported with that caveat rather than dropped, because
+the cost is real and someone will otherwise remove the check without knowing
+what it was bought with. A source comment elsewhere puts the figure at 6%; the
+two were measured on different frames and neither run was kept.
 
 The duplicated pass was kept. Writing that logic twice in two languages is how
 two copies begin to disagree, which is the failure this project exists to
@@ -287,10 +359,33 @@ synthetically and not otherwise.
 "correct". It is also the strongest claim anyone can honestly make about a
 decoder, and any project claiming more should be read carefully.
 
-**Reproducibility.** Every number here is produced by scripts in the
-repository: `conformance/run.py`, `native/compare.py`, `python -m pytest`. The
-real-file corpus cannot be redistributed; the synthetic corpus and the eight
-public frames can, and reproduce every claim that does not depend on it.
+**Reproducibility — what can and cannot be re-run from a clean checkout.**
+
+| claim | reproducible from the repository |
+|---|---|
+| §2 in full — the 840/840 split, the control, the absence of warnings | **yes** · `conformance/run.py` over committed frames |
+| §3.4 malformed-frame table | **yes** · same |
+| §4.2 before / after | **yes** · with the `git archive` command given there |
+| §4.1 conformance counts | **yes** · `conformance/generate.py`, `run.py` |
+| the eight public sample frames | **yes** · committed under CC BY |
+| §3.5 and §4.1 real-file figures — 61,921 frames, 26.1 billion pixels, 105 configurations, 185 exact | **no.** The files cannot be redistributed, and the script that produced these numbers is not in the repository. They rest on our word |
+| §4.3, the 9% | **no.** Measured by editing the source; no flag exists |
+| §6, the crash | **no.** See below |
+
+An earlier draft of this paper claimed that every number came from three named
+scripts. That was not true, and it was caught in review rather than by us.
+Publishing a reproducibility claim that does not survive being checked is
+worse than publishing none, because it invites the reader to distrust the
+parts that would have held.
+
+**A crash we cannot properly evidence.** During development
+`imagecodecs.ljpeg` terminated the interpreter — not an exception — on the
+malformed frame whose scan names an undefined Huffman table. It was observed
+at a shell prompt, and `conformance/run.py` structurally cannot report it: a
+process death is not an exception and the loop never resumes. It is described
+here and excluded from every table, because an unreproducible observation is
+not a result. Anyone wishing to check it should treat it as a lead, not a
+finding — and given the shape of it, privately.
 
 ---
 

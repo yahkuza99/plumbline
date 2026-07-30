@@ -191,6 +191,11 @@ between them, and the shared validation is written once and imported, not
 reimplemented — because a check that lives in one engine is the check that
 drifts.
 
+That is why the corpus is also run against **libjpeg-turbo**, which shares no
+code, no author and no reading of the standard with this project. It agrees
+bit for bit on all 1,691 conforming cases. That is the strongest evidence of
+correctness here, and none of it comes from us.
+
 But agreement is the wrong oracle for truth. **Three implementations that
 share a misreading agree perfectly and are wrong together** — which is exactly
 what happened, twice, before the first release. So the conformance corpus is

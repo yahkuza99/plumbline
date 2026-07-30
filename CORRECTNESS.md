@@ -112,7 +112,7 @@ and checking each sentence against an independent implementation.
 |---|---|
 | **Lossless-JPEG frames from real files** | **61,921 decoded · 0 refused · 0 crashed** (26.1 billion pixels) |
 | Distinct scanner models in that corpus | **93** |
-| Distinct parameter combinations found | 137 (precision × predictor × components × restart × model) |
+| Distinct scanner builds found | 105 (manufacturer × model × modality), from 27 manufacturers |
 | Covering sample re-decoded with the pure-Python reference | **185 exact, 0 differing** |
 | Colour frames | bit-exact against the reference implementation |
 | Synthetic conformance corpus | 1,707 cases — 1,691 must decode, 16 must refuse |
@@ -120,10 +120,10 @@ and checking each sentence against an independent implementation.
 | Plumbline against that corpus | **1,707 exact · 0 refused · 0 wrong** |
 | pylibjpeg (shares no code with us) against it | **1,690 exact, 17 disagreements** — 6 malformed frames it accepts, 11 point-transform cases it does not implement |
 | Silent disagreements between our own implementations | **0** |
-| Test suite | 287 tests (267 without the real discs; 160 more without numba) |
+| Test suite | 184 passing, 2 skipped, on a machine without numba; more where numba imports and the real discs are attached |
 
 Comparing every frame against the reference is not possible — it runs at
-about 0.15 Mpx/s, so 26 billion pixels would take roughly two years. Instead,
+about 0.15 Mpx/s, so 26 billion pixels would take about 48 hours. Instead,
 every frame is decoded by the shipping decoder (which catches refusals,
 crashes and hangs), and one frame from every distinct parameter combination
 is then re-decoded with the reference and compared bit for bit.
