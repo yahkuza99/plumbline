@@ -28,16 +28,41 @@ runtime dependency.
 
 ---
 
+## Why this exists
+
+Patients arrive carrying discs from other hospitals. Those images have to get
+into the medical record, which means something has to read them — and what
+they hold, overwhelmingly, is lossless JPEG.
+
+So this was written to do a job, not as an experiment. Every number below came
+out of doing that job: the files were being read anyway, and testing a decoder
+against the files it is about to be trusted with is not a data-collection
+exercise, it is the minimum standard of care for writing one.
+
+Two things came out of that work and are the reason this is a separate
+project. The decoder Python reaches for by default turned out to be about 25×
+slower than the format allows. And a widely used alternative turned out to
+return **silently wrong pixels** on every file carrying restart markers —
+which is most of them, from several manufacturers, with no error and no
+warning.
+
+Nothing here was collected to publish. **No image left the machine it was
+already held on, and none of it is in this repository** — the conformance
+corpus is synthetic, and the eight sample frames are public research data
+under CC BY.
+
+---
+
 ## Evidence
 
 Every number here was measured on this machine and can be re-measured on
 yours. None of it is asserted.
 
-### Against real hospital discs
+### From production use
 
 | | |
 |---:|:---|
-| **61,921** | frames decoded — **0 refused, 0 crashed** |
+| **61,921** | frames from clinical discs decoded — **0 refused, 0 crashed** |
 | **26.1 billion** | pixels |
 | **105** | scanner configurations, from **27** manufacturers |
 | **185 / 0** | covering sample re-decoded with the pure-Python reference: exact / differing |
@@ -111,11 +136,12 @@ implemented and swept synthetically, but no scanner here has exercised them.
 That is the sharpest limit in this document — and it is exactly where two bugs
 hid until the conformance corpus was built.
 
-**Those discs all come from hospitals in one country.** The scanner mix is what
-those hospitals bought. Konica Minolta and Shimadzu appear nowhere in the
-corpus. Eight frames from US research collections are committed to widen it,
-adding PET — but they are predictor 1 as well, so they broaden vendor and
-modality coverage, not the coverage that matters most.
+**The discs all reached one clinic, in one country.** The scanner mix is
+whatever the hospitals referring to it happened to buy — heavily Siemens, GE
+and Philips CT and MR. Konica Minolta and Shimadzu appear nowhere. Eight
+frames from US research collections are committed to widen it, adding PET, but
+they are predictor 1 as well: they broaden vendor and modality coverage, not
+the coverage that matters most.
 
 **"No known silent failures on the corpus we have"** is a much weaker statement
 than "correct". It is also the strongest statement anyone can honestly make
