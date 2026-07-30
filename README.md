@@ -30,38 +30,31 @@ runtime dependency.
 
 ## Why this exists
 
-This was written for a production workflow that has to read imaging discs of
-unknown origin — whatever scanner wrote them, whatever software exported them
-— and what those discs hold, overwhelmingly, is lossless JPEG.
+Two problems with the decoders already available for this format.
 
-So it was built to do a job, not as an experiment, and every number below is a
-by-product of doing it. Testing a decoder against the files it is about to be
-trusted with is not a study; it is the minimum standard of care for writing
-one.
+**Speed.** The one Python reaches for by default runs at about 4.6 Mpx/s.
+The format allows roughly 25× that on the same hardware.
 
-Two findings from that work are why it became a separate project. The decoder
-Python reaches for by default is about 25× slower than the format allows. And
-a widely used alternative returns **silently wrong pixels** on every file
-carrying restart markers — most of them, across several manufacturers, with no
-error and no warning.
+**Correctness.** A widely used alternative returns **silently wrong pixels**
+on every frame carrying restart markers — across several manufacturers, with
+no error and no warning. Restart markers are common; the corruption is
+structured, so it looks like image noise rather than a fault.
 
-**Nothing was gathered in order to publish it.** No image left the system that
-already held it, and none is in this repository: the conformance corpus is
-synthetic, and the eight committed sample frames are public research data
-under CC BY.
+The second problem is the one that matters, and it is not fixable from
+outside. A decoder either refuses what it cannot read or it does not.
 
 ---
 
 ## Evidence
 
-Every number here was measured on this machine and can be re-measured on
-yours. None of it is asserted.
+Every number here was measured and can be re-measured on your own files. None
+of it is asserted.
 
-### From production use
+### Against real files
 
 | | |
 |---:|:---|
-| **61,921** | frames of real clinical imaging decoded — **0 refused, 0 crashed** |
+| **61,921** | lossless-JPEG frames decoded — **0 refused, 0 crashed** |
 | **26.1 billion** | pixels |
 | **105** | scanner configurations, from **27** manufacturers |
 | **185 / 0** | covering sample re-decoded with the pure-Python reference: exact / differing |
@@ -93,7 +86,7 @@ right answer, so any pixels at all are wrong pixels.
 
 ### Speed
 
-Median over 11 frames from real discs, best of three, one AMD Zen 3 core:
+Median over 11 frames, best of three, one AMD Zen 3 core:
 
 | decoder | median | accepted | agrees | licence |
 |---|---:|---:|---|---|
@@ -135,12 +128,11 @@ implemented and swept synthetically, but no scanner here has exercised them.
 That is the sharpest limit in this document — and it is exactly where two bugs
 hid until the conformance corpus was built.
 
-**The discs all came from one region.** The scanner mix is simply what the
-institutions there happened to buy — heavily Siemens, GE and Philips CT and
-MR. Konica Minolta and Shimadzu appear nowhere. Eight
-frames from US research collections are committed to widen it, adding PET, but
-they are predictor 1 as well: they broaden vendor and modality coverage, not
-the coverage that matters most.
+**The vendor mix is uneven.** Siemens, GE and Philips CT and MR dominate;
+Konica Minolta and Shimadzu do not appear at all. The full list of what did
+and did not appear is in CORRECTNESS.md, because which vendors are covered is
+the part a reader can act on. Eight frames of public research data are
+committed to widen it, adding PET — but they are predictor 1 as well.
 
 **"No known silent failures on the corpus we have"** is a much weaker statement
 than "correct". It is also the strongest statement anyone can honestly make
