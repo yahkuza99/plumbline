@@ -1,9 +1,16 @@
 """Tests for our own lossless JPEG decoder.
 
-The cases below encode the three details that decide whether an implementation
-of this format is correct — restart markers, the SSSS=16 special case, and
-modulo reconstruction — each of which was found by decoding real hospital discs
-and diffing against two independent decoders.
+The cases below encode the details that decide whether an implementation of
+this format is correct: restart markers, which reset the prediction *and* put
+the whole first line of the interval back on Ra (T.81 §H.1.2.1); the SSSS = 16
+special case; and where the reconstruction wraps.
+
+The first three were found by decoding real hospital discs and diffing against
+two independent decoders. The Ra rule could not have been — every one of the
+61,921 real frames this project has decoded uses predictor 1, under which the
+correct and incorrect readings compute the same image. It was found by reading
+Annex H sentence by sentence, and it is why the tests here quote the clause
+rather than describing it.
 """
 
 import numpy as np
@@ -119,6 +126,55 @@ class TestDecoding:
         frame = _frame(4, 2, 8, scan, _COUNTS, _SYMBOLS, restart_interval=4)
         out = decode(frame)
         assert np.all(out == 1 << 7)
+
+    def test_the_whole_first_line_of_an_interval_predicts_from_ra(self):
+        """T.81 §H.1.2.1: "The one-dimensional horizontal predictor (prediction
+        sample Ra) is used for the first line of samples at the start of the
+        scan and at the beginning of each restart interval. The selected
+        predictor is used for all other lines."
+
+        So a restart does not merely reset the prediction *value* for the one
+        sample that follows the marker; it puts that whole line back on Ra.
+        Under predictor 1 the two readings are the same number, which is why
+        this went unnoticed: every one of the 61,921 real frames this project
+        has decoded uses predictor 1.
+
+        Four rows of four, predictor 2 (Rb), one restart after two rows. Each
+        bit is a sample: "0" is a difference of 0 and "1" is SSSS = 16, a
+        difference of 32768 carrying no mantissa.
+        """
+        scan = (_bits_to_bytes("1000" "1000")
+                + bytes([0xFF, 0xD0])
+                + _bits_to_bytes("0100" "0000"))
+        frame = _frame(4, 4, 16, scan, _COUNTS, _SYMBOLS,
+                       predictor=2, restart_interval=8)
+        out = decode(frame)
+
+        # Row 2 opens the second interval: column 0 takes the default, and
+        # column 1 must predict from Ra — the 32768 just written beside it —
+        # so its 32768 difference wraps to 0. Predicting from Rb instead, which
+        # is what this decoder used to do, reads row 1 column 1 (a 0) and
+        # leaves 32768 there.
+        assert out[2, 0] == 32768
+        assert out[2, 1] == 0, "the first line of a restart interval must use Ra"
+
+        # Row 3 is the *second* line of that interval, so it is back on the
+        # selected predictor: column 1 takes Rb from row 2 (a 0) and stays 0. A
+        # decoder that reset every row rather than every interval would put Ra
+        # here too and leave 32768.
+        assert out[3, 1] == 0, "only the first line of an interval uses Ra"
+        assert out.tolist() == [[0, 0, 0, 0]] + [[32768, 0, 0, 0]] * 3
+
+    def test_an_interval_that_is_not_whole_rows_is_refused(self):
+        """T.81 §H.1.1 and table B.7 require Ri to be an integer multiple of
+        the MCU in an MCU-row. Mid-row there is no "first line of the interval"
+        for §H.1.2.1 to name, so every reading of the reset is a guess — and
+        guessing is the one thing this decoder does not do."""
+        scan = _bits_to_bytes("0" * 8) + bytes([0xFF, 0xD0]) + _bits_to_bytes("0" * 8)
+        with pytest.raises(LosslessJpegError, match="whole number"):
+            decode(_frame(4, 4, 8, scan, _COUNTS, _SYMBOLS, restart_interval=3))
+        # the same frame with an interval of whole rows is fine
+        decode(_frame(4, 2, 8, scan, _COUNTS, _SYMBOLS, restart_interval=4))
 
     def test_stuffed_ff_is_data_not_a_marker(self):
         scan = bytes([0xFF, 0x00]) + _bits_to_bytes("0" * 8)

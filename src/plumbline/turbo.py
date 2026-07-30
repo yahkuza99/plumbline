@@ -20,11 +20,13 @@ Three ideas carry the speedup:
   times as much and, on a large frame, more than the entropy decoding itself.
 
 Everything else is deliberately identical to the oracle, including the awkward
-parts: modulo 2^P reconstruction — done inside the loop, where it is free, rather
-than over the finished image, which costs a pass and the memory to hold it and
-is anyway a different answer for predictors that average their neighbours —
-SSSS = 16 consuming no mantissa bits, and a restart marker resetting the
-predictor *and* re-aligning the stream to a byte boundary.
+parts: the wrap applied inside the loop, where it is free, rather than over the
+finished image, which costs a pass and the memory to hold it and is anyway a
+different answer for predictors that average their neighbours; SSSS = 16
+consuming no mantissa bits; a restart marker resetting the predictor *and*
+re-aligning the stream to a byte boundary; and the whole first line of every
+restart interval predicting from Ra, per T.81 §H.1.2.1, rather than only the
+sample the marker precedes.
 
 The samples are written straight out as uint8 or uint16. Decoding into int32 and
 converting afterwards, as an intermediate version did, spends a tenth of the
@@ -265,8 +267,15 @@ def _scan(out, width, height, data, restarts, interval, selector,
     used = 0
     since = 0
     undefined = False
+    # T.81 §H.1.2.1 puts the whole first line of every restart interval back on
+    # Ra, not just the sample the marker precedes; see `reference`, which this
+    # must agree with sample for sample. `check_frame` has refused any interval
+    # that does not start on a row boundary, so this can only rise at column 0.
+    ra_line = True
 
     for row in range(height):
+        if row:
+            ra_line = False
         for col in range(width):
             restarted = False
             if interval != 0 and since == interval:
@@ -277,6 +286,7 @@ def _scan(out, width, height, data, restarts, interval, selector,
                     used += 1
                 since = 0
                 restarted = True
+                ra_line = True
             since += 1
 
             diff, position, buffer, held, missing = _difference(
@@ -285,10 +295,10 @@ def _scan(out, width, height, data, restarts, interval, selector,
 
             if restarted or (row == 0 and col == 0):
                 prediction = default
-            elif row == 0:
-                prediction = np.int64(out[index - 1])
             elif col == 0:
                 prediction = np.int64(out[index - width])
+            elif ra_line:
+                prediction = np.int64(out[index - 1])
             else:
                 prediction = _predicted(selector,
                                         np.int64(out[index - 1]),

@@ -84,26 +84,33 @@ with thanks — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Correctness
 
-**61,921 frames from real hospital discs — 0 refused, 0 crashed** (over ten
-billion pixels, 93 distinct scanner models). One frame from each of the 117
+**61,921 frames from real hospital discs — 0 refused, 0 crashed** (26.1
+billion pixels, 93 distinct scanner models). One frame from each of the 137
 parameter combinations found was re-decoded with the pure-Python reference
-and compared bit for bit: **88 exact, 0 differing**. Plus colour bit-exact, a
-synthetic sweep across table shape × precision × predictor × restart interval
-× point transform, **zero silent disagreements**, and 261 tests.
+and compared bit for bit: **185 exact, 0 differing**. Plus colour bit-exact,
+a synthetic conformance corpus of **1,707 cases** that Plumbline decodes or
+refuses correctly in full, **zero silent disagreements** between our three
+implementations, and 287 tests.
 
 Those discs all come from hospitals in **Thailand**, which bounds what the
-number means: the models are the ones Thai hospitals bought, every predictor
-observed was 1, and scanners common in other markets may not appear at all.
+number means: the models are the ones Thai hospitals bought, and scanners
+common in other markets may not appear at all. The sharpest limit is not
+geographic — **every predictor observed in all 61,921 frames was 1**, so the
+other six carry only synthetic evidence, and of the frames that restart at
+all, every one restarts exactly once per row.
 [CORRECTNESS.md](CORRECTNESS.md) states the gaps plainly.
 
-Everything is verified against `plumbline.reference`, the pure-Python
-implementation in this repository — never against another library. Testing a
-decoder against a second decoder only proves they share assumptions. The
-reference is written to be read against the specification, clause by clause,
-and its comments cite those clauses.
+Our three implementations are verified against `plumbline.reference`, the
+pure-Python one in this repository, which is written to be read against the
+specification clause by clause. That is the right oracle for *agreement*, and
+the wrong one for *truth*: three implementations that share a misreading agree
+perfectly and are all wrong together, which is exactly what happened twice
+before the 1.0 release (see the CHANGELOG). So the conformance corpus is also
+run against decoders that share no code with us, and the specification itself
+is quoted in the places it is easy to misread.
 
 **[CORRECTNESS.md](CORRECTNESS.md)** has the full claim, the evidence, the
-three places in the specification where decoders go wrong, and — just as
+places in the specification where decoders go wrong, and — just as
 importantly — what this project does *not* claim.
 
 ## Status

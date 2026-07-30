@@ -64,8 +64,8 @@ def _image(width: int, height: int, components: int, precision: int,
 
     A flat image hides every predictor bug, because every prediction is right.
     A gradient makes predictors 1-4 differ; noise reaches the corners of the
-    Huffman table; and extremes force the differences that wrap modulo 2^P,
-    which is where predictors 5-7 carry the error forward.
+    Huffman table; and extremes force the differences that wrap, which is
+    where predictors 5-7 carry the error forward.
     """
     top = (1 << precision) - 1
     generator = np.random.default_rng(seed)
@@ -91,7 +91,15 @@ def valid_cases():
     for precision in range(2, 17):
         for predictor in range(1, 8):
             for components in (1, 2, 3, 4):
-                for restart in (0, 1, 3, WIDTH * HEIGHT + 5):
+                # T.81 §H.1.1 and table B.7: Ri shall be an integer multiple of
+                # the MCU in an MCU-row, so the intervals worth sweeping are
+                # whole rows. The last is wider than the image, which is legal
+                # and reaches no marker at all — the case that catches a
+                # decoder counting intervals it never sees. Intervals that
+                # divide a row (this sweep once used 1 and 3 against a width of
+                # 7) are not a harder valid case but an invalid one, and they
+                # have moved to `malformed_cases` where they belong.
+                for restart in (0, WIDTH, WIDTH * 2, WIDTH * (HEIGHT + 1)):
                     for pattern in ("gradient", "noise", "extremes", "flat"):
                         seed += 1
                         # One pattern per shape keeps the corpus at a size
@@ -117,7 +125,9 @@ def valid_cases():
                                frame, np.squeeze(image),
                                f"precision {precision}, predictor {predictor}, "
                                f"{components} component(s), "
-                               + (f"restart every {restart} pixels" if restart else "no restarts")
+                               + (f"restart every {restart} MCU "
+                                  f"({restart // WIDTH} row(s))"
+                                  if restart else "no restarts")
                                + f", {pattern} content")
 
     # point transform: the decoder shifts samples left on the way out
@@ -183,6 +193,20 @@ def malformed_cases():
     rst, rst_data, rst_plan = _sound_frame(restart=WIDTH)
     yield ("bad_rst_out_of_order", rst.replace(b"\xff\xd0", b"\xff\xd5", 1),
            "restart markers must cycle RST0-RST7 in order; this one jumps")
+
+    # T.81 §H.1.1 / table B.7 require Ri to be a whole number of MCU-rows, and
+    # §H.1.2.1 gives the first *line* of every interval to Ra. An interval that
+    # begins mid-row has no first line the standard names, so there is no right
+    # answer to return — three readings are defensible and libjpeg reproduces
+    # none of them. This case says only that a decoder must not pick one
+    # silently. The entropy data is a valid row-aligned frame's, so the frame
+    # is wrong in exactly one respect: the DRI value.
+    yield ("bad_restart_interval_not_whole_rows",
+           rst.replace(build.marker(0xDD, bytes([0, WIDTH])),
+                       build.marker(0xDD, bytes([0, WIDTH - 4])), 1),
+           f"a restart interval of {WIDTH - 4} MCU in a {WIDTH}-MCU row: T.81 "
+           "§H.1.1 requires a whole number of MCU-rows, and mid-row the "
+           "predictor reset in §H.1.2.1 has no defined meaning")
 
     yield ("bad_subsampled",
            build.marker(0xD8)

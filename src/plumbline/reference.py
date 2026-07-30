@@ -9,16 +9,26 @@ Lossless JPEG has no DCT and no quantisation. Each sample is predicted from its
 neighbours and only the difference is Huffman-coded, which is why a complete
 decoder fits in a few hundred lines.
 
-Three details decide whether an implementation is correct, and each was found
-here by decoding real files and diffing against two independent decoders:
+Four details decide whether an implementation is correct:
 
 * a restart marker resets the predictor and re-aligns the stream to a byte
   boundary. Six of eleven real files carry them, usually one per row.
+* a restart interval does not merely reset the prediction *value*. T.81
+  H.1.2.1 puts the whole first line of every interval back on the horizontal
+  predictor Ra, exactly as at the start of the scan; only the lines after it
+  use the predictor the scan header selected. Resetting the value alone is
+  invisible under predictor 1 — which is every real frame in our corpus — and
+  wrong under 2-7, where the first line of each interval would otherwise
+  predict from a row belonging to the previous interval.
 * SSSS = 16 is a special case (T.81 H.1.2.2): the difference is 32768 and no
   mantissa bits follow. Reading sixteen bits instead corrupts the rest of the
   image, because the predictor carries the error forward.
-* reconstruction is modulo 2^P. Without the wrap, one overflowing sample drags
-  every later sample with it.
+* the difference is added to the prediction modulo 2^16 (T.81 H.1.2.1), not
+  modulo 2^P. The mask applied below is 2^P, which is the same number for
+  every conforming frame — a sample is below 2^P and 2^P divides 2^16, so the
+  residue class has one representative in range — and keeps the result inside
+  the precision the frame declares. What must not be done is take the
+  *difference* modulo 2^P when encoding; see conformance/encode.py.
 
 Colour frames (three components, 1x1 sampling, one interleaved scan — the shape
 every RGB ultrasound disc seen so far takes) are decoded with per-component
@@ -86,6 +96,29 @@ def check_frame(info: dict) -> None:
     if info["height"] < 1:
         raise LosslessJpegError("the frame declares no lines; its height would "
                                 "come from a DNL marker, which is not supported")
+
+    # T.81 §H.1.1: "For the lossless processes the restart interval shall be an
+    # integer multiple of the number of MCU in an MCU-row", and table B.7 gives
+    # Ri for lossless as n x MCUR. With 1x1 sampling one MCU is one pixel, so
+    # MCUR is the width.
+    #
+    # This is refused rather than absorbed because the rule it protects is the
+    # one below: §H.1.2.1 puts "the first line" of every restart interval on
+    # Ra, and an interval starting halfway along a row has no first line that
+    # the specification names. Three readings are possible (the tail of the row
+    # it landed in, the next `width` samples, or none at all) and libjpeg
+    # reproduces none of them — measured, not assumed. Every reading is
+    # therefore a guess, and pixels nobody else computes are exactly what this
+    # decoder exists not to return. No frame in the 61,921 real ones this
+    # project has decoded uses such an interval; every one that restarts at all
+    # restarts once per row.
+    interval = info.get("restart_interval", 0)
+    if interval and interval % info["width"]:
+        raise LosslessJpegError(
+            f"the restart interval is {interval} MCU, which is not a whole "
+            f"number of {info['width']}-MCU rows; T.81 §H.1.1 requires an "
+            "integer multiple of the MCU per row, and where an interval starts "
+            "mid-row the predictor rule in §H.1.2.1 has no defined meaning")
 
 
 def check_table(counts: list[int], symbols: list[int]) -> None:
@@ -437,8 +470,18 @@ def decode(frame: bytes) -> np.ndarray:
     restarts = bits.restarts
     used = 0
     since = 0
+    # T.81 §H.1.2.1: "The one-dimensional horizontal predictor (prediction
+    # sample Ra) is used for the first line of samples at the start of the scan
+    # and at the beginning of each restart interval. The selected predictor is
+    # used for all other lines." So this is a property of the whole line, not
+    # of the one sample the restart landed on. `check_frame` has already
+    # refused any interval that does not begin on a row boundary, so the flag
+    # can only be raised at column zero.
+    ra_line = True
 
     for row in range(height):
+        if row:
+            ra_line = False
         for col in range(width):
             # With 1x1 sampling one MCU is one sample of every scan
             # component, so restart intervals count pixels.
@@ -449,6 +492,7 @@ def decode(frame: bytes) -> np.ndarray:
                     used += 1
                 since = 0
                 restarted = True
+                ra_line = True
             since += 1
 
             for scan_slot, comp in enumerate(order):
@@ -471,12 +515,17 @@ def decode(frame: bytes) -> np.ndarray:
                 bits.skip(length)
                 diff = bits.difference(size)
 
+                # §H.1.2.1, in the order the clause states its cases: the
+                # default value opens the first line and every restart
+                # interval; Rb opens every other line; Ra carries the first
+                # line of the scan and of each interval; the selected
+                # predictor carries everything else.
                 if restarted or (row == 0 and col == 0):
                     prediction = default
-                elif row == 0:
-                    prediction = int(out[0, col - 1, comp])
                 elif col == 0:
                     prediction = int(out[row - 1, 0, comp])
+                elif ra_line:
+                    prediction = int(out[row, col - 1, comp])
                 else:
                     prediction = _predict(predictor,
                                           int(out[row, col - 1, comp]),

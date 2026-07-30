@@ -292,9 +292,11 @@ static inline int64_t predicted(int32_t selector, int64_t ra, int64_t rb, int64_
  *   - the caller expands this inline function once per predictor through the
  *     switch in `scan_mono`, folding the selector to a constant and the
  *     predictor to straight-line code.
- *   - a restart is handled between rows, not checked per sample; the
- *     restarted pixel takes the initial prediction and the rest of its row
- *     predicts normally, exactly as the general loop below would.
+ *   - a restart is handled between rows, not checked per sample. T.81 H.1.2.1
+ *     puts the whole first line of an interval on Ra, so a restarted row takes
+ *     the initial prediction at column 0 and runs the same Ra loop the image's
+ *     first row runs — which is why `restarted` selects the loop and not just
+ *     the opening prediction.
  *
  * Everything this loop cannot take (colour, an interval that is not a whole
  * number of rows) falls to the general loop, which decodes anything. */
@@ -326,7 +328,7 @@ static inline int64_t NAME(SAMPLE *out, int32_t width, int32_t height,         \
         ra &= mask;                                                            \
         row_out[0] = (SAMPLE)ra;                                               \
                                                                                \
-        if (row == 0) {                                                        \
+        if (row == 0 || restarted) {           /* T.81 H.1.2.1: Ra line */     \
             for (int32_t col = 1; col < width; col++) {                        \
                 ra = (ra + next_difference(data, data_len, &bit, table))       \
                      & mask;                                                   \
@@ -529,8 +531,14 @@ static int64_t NAME(SAMPLE *out, int32_t width, int32_t height, int32_t ncomp, \
     int32_t since = 0;                                                         \
     int64_t index = 0;                                                         \
     int64_t rowstride = (int64_t)width * ncomp;                                \
+    /* T.81 H.1.2.1: Ra carries the whole first line of the scan and of every  \
+     * restart interval. The caller has refused any interval that does not     \
+     * begin on a row boundary, so this can only rise at column zero. */       \
+    int ra_line = 1;                                                           \
                                                                                \
     for (int32_t row = 0; row < height; row++) {                               \
+        if (row)                                                               \
+            ra_line = 0;                                                       \
         for (int32_t col = 0; col < width; col++) {                            \
             int restarted = 0;                                                 \
             if (interval && since == interval) {                               \
@@ -538,6 +546,7 @@ static int64_t NAME(SAMPLE *out, int32_t width, int32_t height, int32_t ncomp, \
                     bit = restarts[used++] * 8;                                \
                 since = 0;                                                     \
                 restarted = 1;                                                 \
+                ra_line = 1;                                                   \
             }                                                                  \
             since++;                                                           \
                                                                                \
@@ -548,10 +557,10 @@ static int64_t NAME(SAMPLE *out, int32_t width, int32_t height, int32_t ncomp, \
                 int64_t prediction;                                            \
                 if (restarted || (row == 0 && col == 0))                       \
                     prediction = initial;                                      \
-                else if (row == 0)                                             \
-                    prediction = out[at - ncomp];                              \
                 else if (col == 0)                                             \
                     prediction = out[at - rowstride];                          \
+                else if (ra_line)                                              \
+                    prediction = out[at - ncomp];                              \
                 else                                                           \
                     prediction = predicted(selector,                           \
                                            out[at - ncomp],                    \

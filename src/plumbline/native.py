@@ -28,9 +28,15 @@ losing the ability to open a file.
 House rule, as everywhere in this project: decode correctly or raise
 `LosslessJpegError` — never return an image that merely looks decoded. A scan
 that ends before the image does is refused, as is one carrying a code its own
-Huffman table never defines; both are refused by all three decoders, because
-the header, table and entropy-segment checks are `reference`'s own, imported
-rather than reimplemented here.
+Huffman table never defines, as is a restart interval that is not a whole
+number of MCU-rows (T.81 §H.1.1). All three are refused by all three decoders,
+because the header, table and entropy-segment checks are `reference`'s own,
+imported rather than reimplemented here.
+
+That last refusal is what lets the C loops below assume a restart always lands
+at column zero, which is what T.81 §H.1.2.1's rule — the whole first line of
+every restart interval predicts from Ra — needs in order to be expressible as
+a per-row flag rather than a per-sample one.
 """
 
 from __future__ import annotations

@@ -223,6 +223,32 @@ class TestAgreesOnTheHardCases:
         assert np.all(native.decode(frame) == 1 << 7)
         assert _identical(frame)
 
+    def test_the_whole_first_line_of_an_interval_predicts_from_ra(self):
+        """T.81 §H.1.2.1 puts the first line of every restart interval back on
+        Ra, not just the sample the marker precedes. Four rows of four,
+        predictor 2, a restart after two rows; the value at row 2 column 1 is
+        0 under Ra and 32768 under Rb, so it names which rule ran. The oracle
+        is checked too, because both decoders were wrong here together."""
+        scan = (_bits_to_bytes("1000" "1000")
+                + bytes([0xFF, 0xD0])
+                + _bits_to_bytes("0100" "0000"))
+        frame = _frame(4, 4, 16, scan, _COUNTS, _SYMBOLS,
+                       predictor=2, restart_interval=8)
+        out = native.decode(frame)
+        assert out[2, 1] == 0, "the first line of a restart interval must use Ra"
+        assert out[3, 1] == 0, "only the first line of an interval uses Ra"
+        assert _identical(frame)
+
+    def test_an_interval_that_is_not_whole_rows_is_refused(self):
+        """T.81 §H.1.1: Ri shall be an integer multiple of the MCU in an
+        MCU-row. Mid-row, the §H.1.2.1 reset has no defined meaning."""
+        scan = _bits_to_bytes("0" * 8) + bytes([0xFF, 0xD0]) + _bits_to_bytes("0" * 8)
+        with pytest.raises(LosslessJpegError, match="whole number"):
+            native.decode(_frame(4, 4, 8, scan, _COUNTS, _SYMBOLS,
+                                 restart_interval=3))
+        assert _identical(_frame(4, 2, 8, scan, _COUNTS, _SYMBOLS,
+                                 restart_interval=4))
+
     def test_stuffed_ff_is_data_not_a_marker(self):
         frame = _frame(2, 1, 8, bytes([0xFF, 0x00]), _COUNTS, _SYMBOLS)
         assert _identical(frame)
@@ -375,7 +401,12 @@ class TestRefusesRatherThanGuesses:
 def test_random_scans_decode_identically(shape, precision, predictor):
     counts, symbols = _table(shape, min(precision, 16))
     seed = precision * 64 + predictor * 8 + len(shape)
-    for width, height, interval in ((7, 5, 0), (7, 5, 7), (7, 5, 3), (9, 1, 3)):
+    # Intervals are whole MCU-rows, which is the only kind T.81 §H.1.1 allows
+    # and now the only kind either decoder accepts. One row and two rows are
+    # both here because the predictor rule in §H.1.2.1 applies to the *first*
+    # line of an interval only, so a two-row interval is the shape that tells a
+    # decoder resetting every row apart from one resetting every interval.
+    for width, height, interval in ((7, 5, 0), (7, 5, 7), (7, 5, 14), (9, 3, 9)):
         for shift in ((0, 1) if precision > 1 else (0,)):
             scan = (_restarted(width * height, width * height, interval, seed)
                     if interval else _scan_for(width * height, seed))
@@ -396,7 +427,9 @@ def test_random_colour_scans_decode_identically(shape, precision, predictor):
     other = _table("narrow" if shape != "narrow" else "staircase",
                    min(precision, 16))
     seed = precision * 8 + predictor
-    for ncomp, interval in ((2, 0), (3, 0), (3, 4), (4, 2)):
+    # The image is 4 wide, so 4 is one MCU-row and 8 is two; T.81 §H.1.1 allows
+    # nothing between.
+    for ncomp, interval in ((2, 0), (3, 0), (3, 4), (4, 8)):
         samples = 4 * 4 * ncomp
         # A restart interval counts MCUs, and with 1x1 sampling one MCU is one
         # pixel however many components it carries.

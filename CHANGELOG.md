@@ -46,6 +46,57 @@ history carried over.
   already did, instead of reading into its own padding and returning an image
   whose tail it invented.
 
+### Two misreadings of Annex H, found before the first release
+
+Both were in all three decoders at once, because all three were written from
+the same reading. Neither could have been caught by the real-frame corpus:
+every one of its 61,921 frames uses predictor 1, which makes the first change
+a no-op, and the second lived in the conformance *encoder* rather than in the
+decoders. Both were found by reading T.81 Annex H sentence by sentence and
+checking each against libjpeg, which shares no code with this project.
+
+- **OUTPUT CHANGE — the first line of every restart interval now predicts
+  from Ra.** T.81 §H.1.2.1: *"The one-dimensional horizontal predictor
+  (prediction sample Ra) is used for the first line of samples at the start of
+  the scan and at the beginning of each restart interval."* Plumbline applied
+  the initial prediction *value* to the one sample after the marker — which
+  the same paragraph also requires — and then let the rest of that line use
+  the predictor from the scan header. That is one of the two rules, not both.
+
+  Affects frames using **predictors 2–7 together with restart markers**, and
+  nothing else: under predictor 1 the selected predictor *is* Ra, so the two
+  readings compute the same image. All 11 real discs and every predictor-1
+  frame are unchanged, bit for bit. Against libjpeg on a sweep of 840
+  restart-carrying frames across predictors 2–7, agreement went from 320/840
+  to 840/840.
+
+- **OUTPUT CHANGE — a restart interval that is not a whole number of MCU-rows
+  is now refused.** T.81 §H.1.1: *"For the lossless processes the restart
+  interval shall be an integer multiple of the number of MCU in an MCU-row"*,
+  with table B.7 giving Ri for lossless as `n × MCUR`. Such a frame is
+  non-conforming, and mid-row the rule above has no "first line" to name:
+  three readings are defensible, and libjpeg reproduces none of them. Pixels
+  that only this decoder computes are the failure this project exists to
+  prevent, so it refuses instead. Of 2,501 real frames sampled for this,
+  every one that restarts at all restarts exactly once per row; none is
+  affected.
+
+- **The conformance encoder took differences modulo 2^P instead of modulo
+  2^16** (§H.1.2.1: *"The difference between the prediction value and the
+  input is calculated modulo 2^16"*). The decoders were unaffected — masking
+  with 2^P is the same number for any conforming frame — but the corpus was
+  not: it published frames whose differences were in the wrong residue class
+  mod 2^16, which only decoders sharing the mistake could read. Against the
+  1,707-case corpus, pylibjpeg went from **234 exact / 1,472 wrong** to
+  **1,690 exact / 17 wrong**, and the 17 that remain are pylibjpeg's own gaps
+  — 11 point-transform cases it does not implement and 6 malformed frames it
+  accepts.
+
+  The lesson is the one the corpus README already stated and this project
+  still managed to relearn: a round trip through your own encoder proves only
+  that your two halves share assumptions. It is not evidence until something
+  that shares no code with you agrees.
+
 ### Speed
 
 Median 117.9 Mpx/s over 11 frames from real discs (8 manufacturers), one AMD
@@ -66,11 +117,19 @@ heavy dependency that lags each new Python release by months.
 
 ### Correctness
 
+- 61,921 frames from real hospital discs (26.1 billion pixels, 93 scanner
+  models): **0 refused, 0 crashed**. One frame from each of the 137 parameter
+  combinations re-decoded with the pure-Python reference: **185 exact, 0
+  differing**.
 - 11/11 real discs bit-exact at full size, every frame · colour bit-exact ·
-  synthetic sweep over table shape × precision × predictor × restart interval
-  × point transform · **zero silent disagreements** · 261 tests.
-- Everything is verified against the pure-Python reference in this
-  repository, never against another library.
+  a 1,707-case conformance corpus over table shape × precision × predictor ×
+  components × restart interval × point transform, all **1,707 exact, 0
+  wrong** · **zero silent disagreements** · 287 tests.
+- Our three implementations are verified against the pure-Python reference in
+  this repository. The conformance corpus is additionally run against
+  decoders that share no code with us, because agreement among three
+  implementations written from one reading of the specification is not
+  evidence that the reading was right — as the section above records, twice.
 
 ### Not carried over
 

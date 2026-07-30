@@ -20,9 +20,17 @@ visible the moment somebody looks at the image; an encoder that is wrong
 corrupts an archive silently, years before anybody opens it again. The
 asymmetry is the whole reason the project has the rule it has.
 
-Implements ITU-T T.81 Annex H as the reference decoder reads it: predictors
-1-7, precision 2-16, point transform, restart intervals, greyscale and
-interleaved multi-component frames.
+Implements ITU-T T.81 Annex H as the standard states it — not as the reference
+decoder happened to read it. That distinction cost this corpus once already:
+encoder and decoder shared two misreadings (the differences taken modulo 2^P
+rather than modulo 2^16, and Ra applied only to the image's first line rather
+than to the first line of every restart interval), agreed with each other
+perfectly, and published frames libjpeg decodes to different pixels. A
+round-trip against yourself proves nothing your two halves do not already
+assume; every rule below therefore cites its clause.
+
+Predictors 1-7, precision 2-16, point transform, restart intervals, greyscale
+and interleaved multi-component frames.
 """
 
 from __future__ import annotations
@@ -113,9 +121,18 @@ def canonical_codes(lengths: dict[int, int]) -> tuple[list[int], list[int],
 # --------------------------------------------------------------------------- #
 
 def category(difference: int) -> int:
-    """SSSS for a difference — the number of bits its magnitude needs."""
+    """SSSS for a difference — the number of bits its magnitude needs.
+
+    32768 is its own category (T.81 H.1.2.2, table H.2: SSSS = 16 covers the
+    single value 32768 and carries no mantissa). It can only arise once the
+    differences are taken modulo 2^16, which is the one modulus T.81 H.1.2.1
+    names; under the modulo 2^P this encoder used to apply it never appeared,
+    and neither did the bug that hid behind it.
+    """
     if difference == 0:
         return 0
+    if difference == 1 << 15:
+        return MAX_LENGTH
     return int(abs(difference)).bit_length()
 
 
@@ -182,45 +199,69 @@ def encode(image: np.ndarray, precision: int, predictor: int = 1,
     if image.ndim == 2:
         image = image[:, :, None]
     height, width, components = image.shape
-    modulo = 1 << precision
+    ceiling = 1 << precision
     default = 1 << (precision - 1 - point_transform)
 
-    if image.min() < 0 or image.max() >= modulo:
-        raise ValueError(f"samples must be within [0, {modulo})")
+    if image.min() < 0 or image.max() >= ceiling:
+        raise ValueError(f"samples must be within [0, {ceiling})")
+
+    # T.81 §H.1.1 and table B.7: for the lossless processes Ri shall be an
+    # integer multiple of the MCU in an MCU-row. Writing anything else produces
+    # a frame the decoders refuse, and one whose predictor rule the standard
+    # never defines — so refuse to write it rather than publish it as a case.
+    if restart_interval and restart_interval % width:
+        raise ValueError(
+            f"a restart interval of {restart_interval} is not a whole number "
+            f"of {width}-MCU rows; T.81 §H.1.1 requires an integer multiple")
 
     # ---- pass one: the differences, and how often each category appears ----
     differences = np.zeros((height, width, components), dtype=np.int64)
     frequency: list[dict[int, int]] = [{} for _ in range(components)]
     since = 0
+    ra_line = True                 # §H.1.2.1; see the prediction cases below
 
     for row in range(height):
+        if row:
+            ra_line = False
         for col in range(width):
             restarted = False
             if restart_interval and since == restart_interval:
                 since = 0
                 restarted = True
+                ra_line = True
             since += 1
 
             for comp in range(components):
+                # T.81 §H.1.2.1, the four cases in the order the clause gives
+                # them. Ra carries the *whole first line* of the scan and of
+                # every restart interval — not merely the sample the marker
+                # precedes — and the selected predictor carries all other
+                # lines. Under predictor 1 the distinction is invisible, which
+                # is why an encoder and a decoder can both get it wrong and
+                # still agree with each other on every real frame.
                 if restarted or (row == 0 and col == 0):
                     prediction = default
-                elif row == 0:
-                    prediction = int(image[0, col - 1, comp])
                 elif col == 0:
                     prediction = int(image[row - 1, 0, comp])
+                elif ra_line:
+                    prediction = int(image[row, col - 1, comp])
                 else:
                     ra = int(image[row, col - 1, comp])
                     rb = int(image[row - 1, col, comp])
                     rc = int(image[row - 1, col - 1, comp])
                     prediction = _predict(predictor, ra, rb, rc)
 
-                # Any representative of the residue class decodes correctly;
-                # take the one nearest zero so it needs the fewest bits and
-                # never reaches SSSS=16, which carries no mantissa and is
-                # exercised by its own case instead.
-                difference = (int(image[row, col, comp]) - prediction) % modulo
-                if difference > modulo // 2:
-                    difference -= modulo
+                # "The difference between the prediction value and the input is
+                # calculated modulo 2^16" (§H.1.2.1) — 2^16 whatever the
+                # precision, not 2^P. The two differ: at 8-bit precision a
+                # prediction of 250 and a sample of 5 differ by -245, and the
+                # 11 that modulo 2^P gives instead is a different residue class
+                # mod 2^16 and decodes to a different sample everywhere but
+                # here. Any representative of the *right* class is legal, so
+                # take the one nearest zero because it codes shortest.
+                difference = (int(image[row, col, comp]) - prediction) % (1 << 16)
+                if difference > 1 << 15:
+                    difference -= 1 << 16
 
                 differences[row, col, comp] = difference
                 size = category(difference)
@@ -251,7 +292,8 @@ def encode(image: np.ndarray, precision: int, predictor: int = 1,
                 size = category(difference)
                 code, length = codebooks[comp][size]
                 writer.write(code, length)
-                if size:
+                # SSSS = 16 is the one category with no mantissa (T.81 H.1.2.2).
+                if size and size != MAX_LENGTH:
                     writer.write(mantissa(difference, size), size)
 
     writer.align()
