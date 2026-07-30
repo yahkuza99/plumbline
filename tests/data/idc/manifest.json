@@ -1,0 +1,130 @@
+[
+ {
+  "file": "ge-medical-systems_discovery-690_pt.jpg",
+  "manufacturer": "GE MEDICAL SYSTEMS",
+  "model": "Discovery 690",
+  "modality": "PT",
+  "collection": "tcga_ucec",
+  "licence": "CC BY 3.0",
+  "doi": "10.7937/k9/tcia.2016.gkj0zwac",
+  "shape": [
+   192,
+   192
+  ],
+  "dtype": "uint16",
+  "sha256_pixels": "2a2d9517e66869a4d639c698a9c678299b911e24cf8f46f7708ccdc8528457be",
+  "bytes": 34396
+ },
+ {
+  "file": "ge-medical-systems_discovery-rx_pt.jpg",
+  "manufacturer": "GE MEDICAL SYSTEMS",
+  "model": "Discovery RX",
+  "modality": "PT",
+  "collection": "tcga_ucec",
+  "licence": "CC BY 3.0",
+  "doi": "10.7937/k9/tcia.2016.gkj0zwac",
+  "shape": [
+   128,
+   128
+  ],
+  "dtype": "uint16",
+  "sha256_pixels": "22a87226bcd2ab5c220ec8209e3fbd4efacaadf2c923254c8abd4f13804e38ff",
+  "bytes": 16530
+ },
+ {
+  "file": "philips_mx8000_ct.jpg",
+  "manufacturer": "Philips",
+  "model": "Mx8000",
+  "modality": "CT",
+  "collection": "nlst",
+  "licence": "CC BY 4.0",
+  "doi": "10.7937/tcia.hmq8-j677",
+  "shape": [
+   409,
+   512
+  ],
+  "dtype": "uint16",
+  "sha256_pixels": "904adb3dd2bab3a3a57694fc35a3a311eafb4900c4db186ca73521e6edb04ab7",
+  "bytes": 200794
+ },
+ {
+  "file": "siemens_somatom-definition-as+_ct.jpg",
+  "manufacturer": "SIEMENS",
+  "model": "SOMATOM Definition AS+",
+  "modality": "CT",
+  "collection": "tcga_ucec",
+  "licence": "CC BY 3.0",
+  "doi": "10.7937/k9/tcia.2016.gkj0zwac",
+  "shape": [
+   512,
+   512
+  ],
+  "dtype": "uint16",
+  "sha256_pixels": "92100341923704b270066f2ff252832ba3eab3e47dc7e97278a5297bf8cdc64d",
+  "bytes": 173076
+ },
+ {
+  "file": "siemens_somatom-definition-flash_ct.jpg",
+  "manufacturer": "SIEMENS",
+  "model": "SOMATOM Definition Flash",
+  "modality": "CT",
+  "collection": "tcga_ucec",
+  "licence": "CC BY 3.0",
+  "doi": "10.7937/k9/tcia.2016.gkj0zwac",
+  "shape": [
+   512,
+   512
+  ],
+  "dtype": "uint16",
+  "sha256_pixels": "444e780d0f9f4792d0533e34bcba8a8cb87464ada6c3871ebc7fdafa871d5e88",
+  "bytes": 176622
+ },
+ {
+  "file": "siemens_triotim_mr.jpg",
+  "manufacturer": "SIEMENS",
+  "model": "TrioTim",
+  "modality": "MR",
+  "collection": "upenn_gbm",
+  "licence": "CC BY 4.0",
+  "doi": "10.7937/tcia.709x-dn49",
+  "shape": [
+   896,
+   896
+  ],
+  "dtype": "uint16",
+  "sha256_pixels": "e013aff9d881d3e2b26e007ee98d9f52206f5ce7f55634fc2dc1cdf1e49a4ed8",
+  "bytes": 614464
+ },
+ {
+  "file": "siemens_verio_mr.jpg",
+  "manufacturer": "SIEMENS",
+  "model": "Verio",
+  "modality": "MR",
+  "collection": "upenn_gbm",
+  "licence": "CC BY 4.0",
+  "doi": "10.7937/tcia.709x-dn49",
+  "shape": [
+   896,
+   896
+  ],
+  "dtype": "uint16",
+  "sha256_pixels": "efb76b046f89f5ebaf268eec85c07d105d43c7bf636999b0f61717c8d3043075",
+  "bytes": 601264
+ },
+ {
+  "file": "siemens_volume-zoom_ct.jpg",
+  "manufacturer": "SIEMENS",
+  "model": "Volume Zoom",
+  "modality": "CT",
+  "collection": "nlst",
+  "licence": "CC BY 4.0",
+  "doi": "10.7937/tcia.hmq8-j677",
+  "shape": [
+   512,
+   512
+  ],
+  "dtype": "uint16",
+  "sha256_pixels": "37efdf08308ea69e64d0a91a773b5563b1b77d8249f6f119a9b2b3908cf35aba",
+  "bytes": 177076
+ }
+]
