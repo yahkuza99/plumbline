@@ -2,54 +2,130 @@
 
 **A lossless JPEG decoder that is right, or says so.**
 
-Plumbline decodes ITU-T T.81 Annex H lossless JPEG — the format behind DICOM
-transfer syntaxes `1.2.840.10008.1.2.4.57` and `.70`, which is what most
-medical images on hospital discs are actually stored in. It exists because a
-decoder can be wrong without anyone noticing, and a medical image that looks
-fine and isn't is worse than no image at all. So the rule here is
-**decode correctly or raise — never return plausible wrong pixels** — and
-every claim below names the evidence behind it. It is **Apache-2.0**, with no
-copyleft anywhere in its dependency tree, because the software that most needs
-a correct lossless-JPEG decoder is commercial imaging software and device
-firmware that cannot touch GPL. It also happens to be about 25× faster than
-what pydicom reaches for today.
+A decoder can be wrong without anyone noticing. It returns an array, the array
+renders, the image looks like an image — and it is not the image that was
+recorded. In medical imaging that is the worst failure mode there is, because
+nothing about it looks like a failure.
+
+Plumbline decodes ITU-T T.81 Annex H lossless JPEG — DICOM transfer syntaxes
+`1.2.840.10008.1.2.4.57` and `.70`, the format most hospital discs actually
+use. It has one rule, and every design decision is subordinate to it:
+
+> ### Decode correctly, or raise.
+> ### Never return plausible wrong pixels.
 
 ```python
 import plumbline
 
-pixels = plumbline.decode(frame)   # (h, w) greyscale, or (h, w, components)
-                                   # raises LosslessJpegError rather than guess
+pixels = plumbline.decode(frame)   # (h, w), or (h, w, components) for colour
+                                   # LosslessJpegError rather than a guess
 ```
 
-## Measured, not asserted
+Apache-2.0, with no copyleft anywhere in the dependency tree — because the
+software that most needs a correct lossless-JPEG decoder is commercial imaging
+software and device firmware, which cannot touch GPL. NumPy is the only
+runtime dependency.
 
-Median decode rate over 11 frames from real hospital discs, 8 manufacturers,
-best of 3 runs each, on one AMD Zen 3 core (Windows 11, Python 3.12,
-NumPy 1.26):
+---
 
-| decoder | median | frames accepted | agrees with the reference | licence |
-|---|---|---|---|---|
-| **plumbline (native C)** | **117.9 Mpx/s** | 11/11 | exact | Apache-2.0 |
-| plumbline (numba fallback) | 82.2 Mpx/s | 9/11 (no colour) | exact | Apache-2.0 |
+## Evidence
+
+Every number here was measured on this machine and can be re-measured on
+yours. None of it is asserted.
+
+### Against real hospital discs
+
+| | |
+|---:|:---|
+| **61,921** | frames decoded — **0 refused, 0 crashed** |
+| **26.1 billion** | pixels |
+| **105** | scanner configurations, from **27** manufacturers |
+| **185 / 0** | covering sample re-decoded with the pure-Python reference: exact / differing |
+
+Comparing every frame against the reference is not possible — it runs at about
+0.15 Mpx/s, so 26 billion pixels would take a day. So every frame goes through
+the shipping decoder, which catches refusals, crashes and hangs; then one frame
+from each distinct parameter combination is re-decoded with the reference and
+compared bit for bit.
+
+### Against the specification
+
+**1,707 conformance cases**, all passing: 1,691 that must decode and 16 that
+must be refused.
+
+The valid cases sweep the *entire legal parameter space* — precision 2 to 16,
+predictors 1 to 7, one to four components, point transform, restart intervals.
+That space has edges, so it can be enumerated rather than sampled. There is no
+conforming combination this decoder has not been shown, which is a stronger
+claim than any quantity of real files can support.
+
+Each is built by encoding an image we chose, so the expected pixels are the
+image itself — a round trip, not a decoder's opinion of one.
+
+The 16 refusal cases cover what the specification does *not* bound: a
+truncated scan, a table the scan names but nobody defined, an interval
+declared and never emitted, restart markers out of sequence. Those have no
+right answer, so any pixels at all are wrong pixels.
+
+### Speed
+
+Median over 11 frames from real discs, best of three, one AMD Zen 3 core:
+
+| decoder | median | accepted | agrees | licence |
+|---|---:|---:|---|---|
+| **plumbline** (compiled C) | **117.9 Mpx/s** | 11/11 | exact | Apache-2.0 |
+| plumbline (numba fallback) | 82.2 Mpx/s | 9/11 | exact | Apache-2.0 |
 | pylibjpeg-libjpeg 2.4.0 | 4.6 Mpx/s | 11/11 | exact | **GPL-3.0** |
-| plumbline (pure-Python reference) | ~0.15 Mpx/s | 11/11 | is the reference | Apache-2.0 |
+| plumbline (reference) | ~0.15 Mpx/s | 11/11 | *is* the reference | Apache-2.0 |
 
-Reproduce it on your own files — nothing is uploaded, nothing is written:
+Speed is listed last on purpose. It is the least interesting thing about this
+project.
+
+### Reproduce all of it
 
 ```sh
 python native/build.py
+python -m pytest tests/ -q
+python conformance/run.py                      # every decoder installed here
 PLUMBLINE_TESTDATA=/path/to/your/discs python native/compare.py
 ```
 
-`compare.py` benchmarks **and diffs against the reference implementation**,
-because a decoder that is fast and wrong is worth nothing. It reports every
-decoder installed on your machine, and prints "not installed" rather than
-skipping quietly, so a run that compared against nothing cannot be mistaken
-for a clean sweep.
+`compare.py` measures **and diffs against the reference at the same time**,
+because a decoder that is fast and wrong is worth nothing. It names every
+decoder it could not import rather than skipping quietly, so a run that
+compared against nothing cannot be mistaken for a clean sweep.
 
-Numbers move ±10% run to run on a laptop. Report the median, say what you
-measured on, and treat any single figure — including ours — with suspicion
-until you have re-run it.
+Nothing is uploaded. Nothing is written. Numbers move ±10% on a laptop —
+report the median, say what you measured on, and distrust any single figure,
+including ours, until you have run it yourself.
+
+---
+
+## What this does not cover
+
+The limits matter more than the totals, so they are stated first rather than
+buried.
+
+**Every predictor observed in all 61,921 real frames was 1.** The other six are
+implemented and swept synthetically, but no scanner here has exercised them.
+That is the sharpest limit in this document — and it is exactly where two bugs
+hid until the conformance corpus was built.
+
+**Those discs all come from hospitals in one country.** The scanner mix is what
+those hospitals bought. Konica Minolta and Shimadzu appear nowhere in the
+corpus. Eight frames from US research collections are committed to widen it,
+adding PET — but they are predictor 1 as well, so they broaden vendor and
+modality coverage, not the coverage that matters most.
+
+**"No known silent failures on the corpus we have"** is a much weaker statement
+than "correct". It is also the strongest statement anyone can honestly make
+about a decoder.
+
+**[CORRECTNESS.md](CORRECTNESS.md)** — the full claim, the evidence behind each
+part of it, the three places in the specification where decoders go wrong, and
+what this project does not claim.
+
+---
 
 ## Install
 
@@ -57,78 +133,68 @@ until you have re-run it.
 pip install plumbline
 ```
 
-Wheels ship the compiled core, so there is nothing to build and no C toolchain
-needed. If no wheel matches your platform, Plumbline still works: it falls
-back to numba (`pip install plumbline[turbo]`) and then to the pure-Python
-reference. **You lose speed, never a file.**
+Wheels carry the compiled core — no build step, no C toolchain. Where no wheel
+matches your platform it falls back to numba (`plumbline[turbo]`), then to the
+pure-Python reference. **You lose speed, never a file.**
 
-To build the core yourself:
+Build the core yourself with `python native/build.py`, which finds `cl`, `gcc`,
+`clang` or `zig cc` on its own.
 
-```sh
-python native/build.py     # finds cl, gcc, clang or zig cc automatically
-```
+---
 
 ## Scope
 
-**Does:** lossless JPEG (SOF₃), precision 2–16, predictors 1–7, restart
-markers, point transform, greyscale and interleaved colour.
+**Does:** lossless JPEG (SOF₃) · precision 2–16 · predictors 1–7 · restart
+markers · point transform · greyscale and interleaved colour.
 
 **Does not, and refuses rather than guesses:** encoding · chroma subsampling ·
-JPEG-LS · JPEG 2000 · baseline JPEG · arithmetic coding · parsing DICOM
-itself. Plumbline takes a JPEG frame and returns pixels. Use pydicom or GDCM
-for the container.
+JPEG-LS · JPEG 2000 · baseline JPEG · arithmetic coding · parsing DICOM itself.
 
-Keeping that surface small is the whole reason one person can make a
-correctness promise about it. Feature requests that widen it will be declined
-with thanks — see [CONTRIBUTING.md](CONTRIBUTING.md).
+Plumbline takes a JPEG frame and returns pixels. Use pydicom or GDCM for the
+container. Keeping that surface small is the only reason one person can make a
+correctness promise about it at all, so requests to widen it are declined with
+thanks — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## Correctness
+---
 
-**61,921 frames from real hospital discs — 0 refused, 0 crashed** (26.1
-billion pixels, 93 distinct scanner models). One frame from each of the 137
-parameter combinations found was re-decoded with the pure-Python reference
-and compared bit for bit: **185 exact, 0 differing**. Plus colour bit-exact,
-a synthetic conformance corpus of **1,707 cases** that Plumbline decodes or
-refuses correctly in full, **zero silent disagreements** between our three
-implementations, and 287 tests.
+## Three implementations, one answer
 
-Those discs all come from hospitals in **Thailand**, which bounds what the
-number means: the models are the ones Thai hospitals bought, and scanners
-common in other markets may not appear at all. The sharpest limit is not
-geographic — **every predictor observed in all 61,921 frames was 1**, so the
-other six carry only synthetic evidence, and of the frames that restart at
-all, every one restarts exactly once per row.
-[CORRECTNESS.md](CORRECTNESS.md) states the gaps plainly.
+| | |
+|---|---|
+| `native` | compiled C, loaded through ctypes. Never touches the Python C API, so one binary serves every Python version on a platform. |
+| `turbo` | numba. Greyscale only. For platforms with no wheel. |
+| `reference` | pure Python. Slow, and the most important file here — written to be read against the specification clause by clause, with the clause numbers in the comments. |
 
-Our three implementations are verified against `plumbline.reference`, the
-pure-Python one in this repository, which is written to be read against the
-specification clause by clause. That is the right oracle for *agreement*, and
-the wrong one for *truth*: three implementations that share a misreading agree
-perfectly and are all wrong together, which is exactly what happened twice
-before the 1.0 release (see the CHANGELOG). So the conformance corpus is also
-run against decoders that share no code with us, and the specification itself
-is quoted in the places it is easy to misread.
+All three must produce the same bits or refuse. That is the entire contract
+between them, and the shared validation is written once and imported, not
+reimplemented — because a check that lives in one engine is the check that
+drifts.
 
-**[CORRECTNESS.md](CORRECTNESS.md)** has the full claim, the evidence, the
-places in the specification where decoders go wrong, and — just as
-importantly — what this project does *not* claim.
+But agreement is the wrong oracle for truth. **Three implementations that
+share a misreading agree perfectly and are wrong together** — which is exactly
+what happened, twice, before the first release. So the conformance corpus is
+also run against decoders that share no code with this one, and the
+specification is quoted wherever it is easy to misread.
+
+---
 
 ## Status
 
-Maintained by one person with a day job. Issues get a first reply within about
-a week; a bug with a frame that reproduces it gets one much faster. There is
-no roadmap beyond what is in the issues, and the scope above is closed.
+Maintained by one person with a day job. A first reply within about a week; a
+bug with a frame that reproduces it, much faster. The scope above is closed and
+there is no roadmap beyond the open issues.
 
-If a frame decodes wrongly, **that report is worth more to this project than a
-pull request** — it is the one thing we cannot generate ourselves. Strip the
-patient data first; the JPEG frame is all that is needed, and nothing carrying
-a DICOM preamble will be accepted.
+**If a frame decodes wrongly, that report is worth more than a pull request.**
+It is the one thing this project cannot generate for itself. Strip the patient
+data first — the bare JPEG frame is all that is needed, and nothing carrying a
+DICOM preamble will be accepted.
+
+---
 
 ## Licence
 
-Apache-2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE).
-Copyright 2026 Rungroj T.
+Apache-2.0 — [LICENSE](LICENSE), [NOTICE](NOTICE). Copyright 2026 Rungroj T.
 
 **Not a medical device.** Not submitted to any regulator, not for diagnostic
-use. If you build it into a regulated product, its verification is yours to
-do; CORRECTNESS.md exists to make that easier, not to do it for you.
+use. If you build it into a regulated product, its verification is yours to do.
+CORRECTNESS.md exists to make that easier, not to do it for you.
