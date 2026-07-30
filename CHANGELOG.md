@@ -117,7 +117,7 @@ heavy dependency that lags each new Python release by months.
 
 ### Correctness
 
-- 61,921 frames from real hospital discs (26.1 billion pixels, 93 scanner
+- 61,921 frames of real clinical imaging (26.1 billion pixels, 105 scanner
   models): **0 refused, 0 crashed**. One frame from each of the 137 parameter
   combinations re-decoded with the pure-Python reference: **185 exact, 0
   differing**.

@@ -8,8 +8,8 @@ recorded. In medical imaging that is the worst failure mode there is, because
 nothing about it looks like a failure.
 
 Plumbline decodes ITU-T T.81 Annex H lossless JPEG — DICOM transfer syntaxes
-`1.2.840.10008.1.2.4.57` and `.70`, the format most hospital discs actually
-use. It has one rule, and every design decision is subordinate to it:
+`1.2.840.10008.1.2.4.57` and `.70`, the format most imaging discs actually
+carry. It has one rule, and every design decision is subordinate to it:
 
 > ### Decode correctly, or raise.
 > ### Never return plausible wrong pixels.
@@ -30,25 +30,24 @@ runtime dependency.
 
 ## Why this exists
 
-Patients arrive carrying discs from other hospitals. Those images have to get
-into the medical record, which means something has to read them — and what
-they hold, overwhelmingly, is lossless JPEG.
+This was written for a production workflow that has to read imaging discs of
+unknown origin — whatever scanner wrote them, whatever software exported them
+— and what those discs hold, overwhelmingly, is lossless JPEG.
 
-So this was written to do a job, not as an experiment. Every number below came
-out of doing that job: the files were being read anyway, and testing a decoder
-against the files it is about to be trusted with is not a data-collection
-exercise, it is the minimum standard of care for writing one.
+So it was built to do a job, not as an experiment, and every number below is a
+by-product of doing it. Testing a decoder against the files it is about to be
+trusted with is not a study; it is the minimum standard of care for writing
+one.
 
-Two things came out of that work and are the reason this is a separate
-project. The decoder Python reaches for by default turned out to be about 25×
-slower than the format allows. And a widely used alternative turned out to
-return **silently wrong pixels** on every file carrying restart markers —
-which is most of them, from several manufacturers, with no error and no
-warning.
+Two findings from that work are why it became a separate project. The decoder
+Python reaches for by default is about 25× slower than the format allows. And
+a widely used alternative returns **silently wrong pixels** on every file
+carrying restart markers — most of them, across several manufacturers, with no
+error and no warning.
 
-Nothing here was collected to publish. **No image left the machine it was
-already held on, and none of it is in this repository** — the conformance
-corpus is synthetic, and the eight sample frames are public research data
+**Nothing was gathered in order to publish it.** No image left the system that
+already held it, and none is in this repository: the conformance corpus is
+synthetic, and the eight committed sample frames are public research data
 under CC BY.
 
 ---
@@ -62,7 +61,7 @@ yours. None of it is asserted.
 
 | | |
 |---:|:---|
-| **61,921** | frames from clinical discs decoded — **0 refused, 0 crashed** |
+| **61,921** | frames of real clinical imaging decoded — **0 refused, 0 crashed** |
 | **26.1 billion** | pixels |
 | **105** | scanner configurations, from **27** manufacturers |
 | **185 / 0** | covering sample re-decoded with the pure-Python reference: exact / differing |
@@ -136,9 +135,9 @@ implemented and swept synthetically, but no scanner here has exercised them.
 That is the sharpest limit in this document — and it is exactly where two bugs
 hid until the conformance corpus was built.
 
-**The discs all reached one clinic, in one country.** The scanner mix is
-whatever the hospitals referring to it happened to buy — heavily Siemens, GE
-and Philips CT and MR. Konica Minolta and Shimadzu appear nowhere. Eight
+**The discs all came from one region.** The scanner mix is simply what the
+institutions there happened to buy — heavily Siemens, GE and Philips CT and
+MR. Konica Minolta and Shimadzu appear nowhere. Eight
 frames from US research collections are committed to widen it, adding PET, but
 they are predictor 1 as well: they broaden vendor and modality coverage, not
 the coverage that matters most.

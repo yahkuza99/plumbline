@@ -110,7 +110,7 @@ and checking each sentence against an independent implementation.
 
 | Check | Result |
 |---|---|
-| **Frames from real hospital discs** | **61,921 decoded · 0 refused · 0 crashed** (26.1 billion pixels) |
+| **Frames of real clinical imaging** | **61,921 decoded · 0 refused · 0 crashed** (26.1 billion pixels) |
 | Distinct scanner models in that corpus | **93** |
 | Distinct parameter combinations found | 137 (precision × predictor × components × restart × model) |
 | Covering sample re-decoded with the pure-Python reference | **185 exact, 0 differing** |
@@ -130,10 +130,13 @@ is then re-decoded with the reference and compared bit for bit.
 
 ### Where that corpus came from, and what it does not cover
 
-**Every disc is from a hospital in Thailand.** That is a real limitation and
-not a small one: the 93 models are the machines Thai hospitals bought, and
-the distribution is dominated by Siemens, GE and Philips CT and MR. Scanners
-common in other markets may not appear even once.
+**Every disc came from one country.** That is a real limitation and not a
+small one: the 105 scanner configurations are whatever the institutions there
+bought, and the distribution is dominated by Siemens, GE and Philips CT and
+MR. Machines common in other markets may not appear even once.
+
+Which vendors are over- and under-represented matters more to a reader than
+where the discs were, so both are listed rather than summarised.
 
 The 27 manufacturers that do appear are Siemens (and Siemens Healthineers /
 Siemens NM), GE (MEDICAL SYSTEMS and Healthcare), Philips (and Philips Medical
