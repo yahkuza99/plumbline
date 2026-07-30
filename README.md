@@ -50,6 +50,10 @@ outside. A decoder either refuses what it cannot read or it does not.
 Every number here was measured and can be re-measured on your own files. None
 of it is asserted.
 
+![Coverage of the lossless JPEG parameter space: all 105 precision-by-predictor
+combinations are swept by the conformance corpus; 7 of them, all predictor 1,
+also appear in real files](docs/coverage.svg)
+
 ### Against real files
 
 | | |

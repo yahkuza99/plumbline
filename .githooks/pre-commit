@@ -1,50 +1,49 @@
 #!/bin/sh
 # Refuse to commit medical images.
 #
-# The test corpus for this project is real patient data. It lives outside the
+# Test data for this project is real patient imaging. It lives outside the
 # repository and must stay there. .gitignore alone is not enough: `git add -f`
 # and a mistyped path both walk straight past it, and a DICOM file whose name
-# gives nothing away is indistinguishable from a fixture until someone opens it.
+# gives nothing away is indistinguishable from a fixture until someone opens
+# it. So files are identified by what they contain, not what they are called.
 #
-# So identify files by what they contain, not what they are called.
+# The scan runs in one process. An earlier version spawned `dd` per file, which
+# is fine for a handful and takes minutes once the conformance corpus is
+# staged — and a hook slow enough to be worked around is a hook that will be.
+#
+# The Python path asks git for the file list itself rather than receiving it on
+# stdin: `python - <<EOF` already spends stdin on the script, so a piped list
+# arrives empty and every check silently passes. That version was written and
+# caught by a decoy file, which is why tests/test_hook.py now exists.
 
+set -e
+
+for python in python3 python py; do
+    if command -v "$python" >/dev/null 2>&1; then
+        "$python" "$(dirname "$0")/scan_staged.py"
+        exit $?
+    fi
+done
+
+# No Python: fall back to the slow, dependency-free version rather than let the
+# commit through unchecked. A guard that disables itself when a tool is missing
+# is worse than no guard, because it is still trusted.
 staged=$(git diff --cached --name-only --diff-filter=AM)
 [ -z "$staged" ] && exit 0
-
 blocked=""
-
 for f in $staged; do
     [ -f "$f" ] || continue
-
-    # DICOM part-10: 128-byte preamble then the literal "DICM" at offset 128.
     magic=$(dd if="$f" bs=1 skip=128 count=4 2>/dev/null | tr -d '\0')
-    if [ "$magic" = "DICM" ]; then
-        blocked="$blocked  $f  (DICOM part-10 file)\n"
-        continue
-    fi
-
-    # Raw DICOM without a preamble, and the bare transfer syntax UIDs. A file
-    # carrying these is either an image or something that quotes one.
-    if head -c 4096 "$f" 2>/dev/null | grep -qa '1\.2\.840\.10008\.1\.2'; then
-        case "$f" in
-            *.py|*.md|*.c|*.h|*.toml|*.yml|*.yaml|*.txt|*.cfg|*.json) ;;   # source may name a UID
-            *) blocked="$blocked  $f  (contains a DICOM transfer syntax UID)\n" ;;
-        esac
-    fi
-
+    [ "$magic" = "DICM" ] && blocked="$blocked  $f  (DICOM part-10 file)\n"
     case "$f" in
         *.dcm|*.DCM|*.ima|*.IMA|*.dicom)
             blocked="$blocked  $f  (medical image extension)\n" ;;
     esac
 done
-
 if [ -n "$blocked" ]; then
     printf '\nCommit refused. These files look like medical images:\n\n'
     printf "$blocked"
-    printf '\nPatient data must never enter this repository, and rewriting history\n'
-    printf 'after a push does not remove it from a remote. If you are certain a\n'
-    printf 'file is synthetic, commit it with --no-verify and say so in the message.\n\n'
+    printf '\nPatient data must never enter this repository.\n\n'
     exit 1
 fi
-
 exit 0

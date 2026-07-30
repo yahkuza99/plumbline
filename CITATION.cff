@@ -1,0 +1,37 @@
+cff-version: 1.2.0
+title: "Plumbline: a lossless JPEG decoder that is right, or says so"
+message: >-
+  If you use this software or its conformance corpus in work you publish,
+  please cite it. If you use the corpus to evaluate a different decoder,
+  citing it is what makes your result checkable by someone else.
+type: software
+authors:
+  - family-names: "T."
+    given-names: "Rungroj"
+repository-code: "https://github.com/yahkuza99/plumbline"
+license: Apache-2.0
+version: 0.1.0
+abstract: >-
+  A decoder for ITU-T T.81 Annex H lossless JPEG (DICOM transfer syntaxes
+  1.2.840.10008.1.2.4.57 and .70) built on a single rule: decode correctly or
+  raise, never return plausible wrong pixels. It ships three independent
+  implementations behind one entry point — compiled C, numba, and a pure-Python
+  reference written to be read against the specification clause by clause — and
+  a conformance corpus that enumerates the format's entire legal parameter
+  space rather than sampling it, together with a battery of malformed frames a
+  decoder must refuse.
+
+  The corpus is built by encoding chosen images, so each case asserts a round
+  trip rather than one implementation's reading of the standard. That
+  distinction is not academic: two misreadings of Annex H were shared by this
+  project's encoder and all three of its decoders, agreed with each other
+  perfectly, and were caught only by comparison against an implementation that
+  shares no code with them.
+keywords:
+  - lossless JPEG
+  - ITU-T T.81
+  - DICOM
+  - medical imaging
+  - image codec
+  - conformance testing
+  - silent data corruption
