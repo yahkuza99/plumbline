@@ -53,6 +53,7 @@ from plumbline.reference import (
     check_scan,
     check_table,
     header,
+    scan_slots as _slots,
 )
 
 _SUFFIX = {"win32": ".dll", "darwin": ".dylib"}.get(sys.platform, ".so")
@@ -89,31 +90,6 @@ except Exception:                          # pragma: no cover - a broken binary
 AVAILABLE = _lib is not None
 
 
-def _slots(info: dict) -> list[int]:
-    """Map each scan component back to its slot in the frame, as the oracle
-    does, so the output planes land in frame order whatever order the scan
-    lists them in."""
-    components = info.get("components", 0)
-    if components < 1:
-        raise LosslessJpegError("frame declares no components")
-    for horizontal, vertical in info.get("sampling", []):
-        if (horizontal, vertical) != (1, 1):
-            raise LosslessJpegError(
-                f"sampling factor {horizontal}x{vertical} is not supported; "
-                "only 1x1 (no subsampling) is")
-    if len(info["scan_ids"]) != components:
-        raise LosslessJpegError(
-            f"scan interleaves {len(info['scan_ids'])} of {components} "
-            "components; non-interleaved scans are not supported")
-
-    frame_ids = info["frame_ids"]
-    order: list[int] = []
-    for scan_id in info["scan_ids"]:
-        if scan_id not in frame_ids or frame_ids.index(scan_id) in order:
-            raise LosslessJpegError(
-                f"scan component {scan_id} does not match the frame")
-        order.append(frame_ids.index(scan_id))
-    return order
 
 
 def _tables(info: dict) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:

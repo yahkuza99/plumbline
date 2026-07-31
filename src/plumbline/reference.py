@@ -121,6 +121,40 @@ def check_frame(info: dict) -> None:
             "mid-row the predictor rule in §H.1.2.1 has no defined meaning")
 
 
+def scan_slots(info: dict) -> list[int]:
+    """Map each scan component back to its slot in the frame, refusing first.
+
+    This lives here, and `native` and `turbo` import it, because it used to be
+    written out twice. `turbo` had a third copy that omitted the subsampling
+    check entirely, so it accepted frames the other two refused — in a project
+    whose own documentation says all three refuse the same frames for the same
+    reasons. A check that exists in one decoder is the check that drifts.
+    """
+    components = info.get("components", 0)
+    if components < 1:
+        raise LosslessJpegError("frame declares no components")
+
+    for horizontal, vertical in info.get("sampling", []):
+        if (horizontal, vertical) != (1, 1):
+            raise LosslessJpegError(
+                f"sampling factor {horizontal}x{vertical} is not supported; "
+                "only 1x1 (no subsampling) is")
+
+    if len(info["scan_ids"]) != components:
+        raise LosslessJpegError(
+            f"scan interleaves {len(info['scan_ids'])} of {components} "
+            "components; non-interleaved scans are not supported")
+
+    frame_ids = info["frame_ids"]
+    order: list[int] = []
+    for scan_id in info["scan_ids"]:
+        if scan_id not in frame_ids or frame_ids.index(scan_id) in order:
+            raise LosslessJpegError(
+                f"scan component {scan_id} does not match the frame")
+        order.append(frame_ids.index(scan_id))
+    return order
+
+
 def check_table(counts: list[int], symbols: list[int]) -> None:
     """Refuse a Huffman table that cannot be the one the encoder used.
 
@@ -356,6 +390,11 @@ def header(frame: bytes) -> dict:
         if frame[i] != 0xFF:
             i += 1
             continue
+        # Any number of 0xFF bytes may precede a marker (T.81 B.1.1.3). Taking
+        # the byte after the first one as the marker code desynchronised the
+        # whole parse on a conforming file, and reported it as having no SOS.
+        while i + 1 < n and frame[i + 1] == 0xFF:
+            i += 1
         marker = frame[i + 1]
         i += 2
         if marker in (SOI, EOI) or 0xD0 <= marker <= 0xD7:
@@ -365,13 +404,26 @@ def header(frame: bytes) -> dict:
         length = (frame[i] << 8) | frame[i + 1]
         segment = frame[i + 2:i + length]
 
+        def need(count: int, what: str) -> None:
+            """Refuse a segment too short for the field about to be read.
+
+            Each of these used to index first and check afterwards, so a
+            truncated header raised IndexError — which callers told to expect
+            LosslessJpegError do not catch, and which takes their process with
+            it. A malformed file must produce a diagnosis, not a crash.
+            """
+            if len(segment) < count:
+                raise LosslessJpegError(
+                    f"{what} segment is truncated: {len(segment)} bytes, "
+                    f"needs at least {count}")
+
         if marker == SOF3:
+            need(6, "SOF3")
             info["precision"] = segment[0]
             info["height"] = (segment[1] << 8) | segment[2]
             info["width"] = (segment[3] << 8) | segment[4]
             info["components"] = segment[5]
-            if len(segment) < 6 + 3 * info["components"]:
-                raise LosslessJpegError("SOF3 segment is truncated")
+            need(6 + 3 * info["components"], "SOF3")
             info["frame_ids"] = []
             info["sampling"] = []
             for c in range(info["components"]):
@@ -382,15 +434,25 @@ def header(frame: bytes) -> dict:
         elif marker == DHT:
             pos = 0
             while pos < len(segment):
+                if len(segment) < pos + 17:
+                    raise LosslessJpegError(
+                        "DHT segment ends inside a table's code-length counts")
                 identifier = segment[pos] & 0x0F
                 counts = list(segment[pos + 1:pos + 17])
                 total = sum(counts)
+                if len(segment) < pos + 17 + total:
+                    raise LosslessJpegError(
+                        f"DHT segment declares {total} symbols and carries "
+                        f"{len(segment) - pos - 17}")
                 tables[identifier] = (counts, list(segment[pos + 17:pos + 17 + total]))
                 pos += 17 + total
         elif marker == DRI:
+            need(2, "DRI")
             info["restart_interval"] = (segment[0] << 8) | segment[1]
         elif marker == SOS:
+            need(1, "SOS")
             count = segment[0]
+            need(4 + count * 2, "SOS")
             info["scan_ids"] = [segment[1 + c * 2] for c in range(count)]
             info["table_ids"] = [segment[2 + c * 2] >> 4 for c in range(count)]
             info["predictor"] = segment[1 + count * 2]
@@ -418,30 +480,12 @@ def decode(frame: bytes) -> np.ndarray:
     caller can fall back rather than receive a plausible-looking wrong image.
     """
     info = header(frame)
-    components = info.get("components", 0)
-    if components < 1:
-        raise LosslessJpegError("frame declares no components")
+    # In this order in all three decoders, so that a frame wrong in more than
+    # one way is reported the same way by each of them.
+    order = scan_slots(info)
     check_frame(info)
-    for horizontal, vertical in info.get("sampling", []):
-        if (horizontal, vertical) != (1, 1):
-            raise LosslessJpegError(
-                f"sampling factor {horizontal}x{vertical} is not supported; "
-                "only 1x1 (no subsampling) is")
-    if len(info["scan_ids"]) != components:
-        raise LosslessJpegError(
-            f"scan interleaves {len(info['scan_ids'])} of {components} "
-            "components; non-interleaved scans are not supported")
 
-    # Map each scan component back to its slot in the frame, so the output
-    # planes land in frame order whatever order the scan lists them in.
-    frame_ids = info["frame_ids"]
-    order = []
-    for scan_id in info["scan_ids"]:
-        if scan_id not in frame_ids or frame_ids.index(scan_id) in order:
-            raise LosslessJpegError(
-                f"scan component {scan_id} does not match the frame")
-        order.append(frame_ids.index(scan_id))
-
+    components = info["components"]
     precision = info["precision"]
     height, width = info["height"], info["width"]
     predictor = info["predictor"]

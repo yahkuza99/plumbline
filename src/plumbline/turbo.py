@@ -54,6 +54,7 @@ from plumbline.reference import (
     check_scan,
     check_table,
     header,
+    scan_slots,
 )
 
 try:                                       # pragma: no cover - depends on install
@@ -397,6 +398,9 @@ def _validate(info: dict) -> None:
         raise LosslessJpegError(
             f"{components}-component frames are not supported yet")
     check_frame(info)
+    # The same refusals the other two make. This module used to check only
+    # the component count, and so accepted subsampled frames they rejected.
+    scan_slots(info)
 
 
 def decode(frame: bytes, parallel: bool = False) -> np.ndarray:
