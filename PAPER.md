@@ -23,7 +23,7 @@ implementation sharing no code with ours.
 Second, we show that the legal parameter space of this format is small enough
 to enumerate rather than sample — 105 combinations of precision and predictor,
 swept exhaustively — and that doing so is what surfaced the two bugs above. A
-corpus of 61,921 real frames from 105 scanner builds did not, because
+corpus of 81,172 real frames from 113 scanner builds did not, because
 every one of them used a single predictor.
 
 We release the decoder under Apache-2.0 and the conformance corpus alongside
@@ -121,8 +121,8 @@ behaviour they are relying on.
 
 ### 2.5 Real files
 
-61,921 lossless-JPEG frames — 26.1 billion pixels, 105 distinct
-(manufacturer, model, modality) builds from 27 manufacturers — were decoded to detect refusals, crashes and hangs.
+81,172 lossless-JPEG frames — 34.7 billion pixels, 113 distinct
+(manufacturer, model, modality) builds from 28 named manufacturers — were decoded to detect refusals, crashes and hangs.
 Comparing every frame against the pure-Python reference is impractical at
 ~0.15 Mpx/s, so one frame from each distinct parameter combination was
 re-decoded and compared bit for bit.
@@ -137,7 +137,7 @@ re-decoded and compared bit for bit.
 |---|---|
 | Conformance corpus | 1,707 cases — 1,691 must decode, 16 must be refused |
 | Legal (precision × predictor) space | 105 of 105 |
-| Real frames | 61,921 · 0 refused · 0 crashed |
+| Real frames | 81,172 · 0 refused · 0 crashed |
 | Covering sample vs the reference | 185 exact, 0 differing |
 
 ### 3.2 Cross-implementation agreement
@@ -235,7 +235,7 @@ Each mechanism failed for a different reason, and the pattern is the point:
 |---|---|
 | three implementations agreeing | all three were written from the same reading of the standard |
 | round trip through the corpus | the encoder shared the misreading with the decoders |
-| 61,921 real frames | every one used predictor 1, where the first bug does not manifest |
+| 81,172 real frames | every one used predictor 1, where the first bug does not manifest |
 | the modulo error specifically | under modulo 2^P the SSSS = 16 case cannot arise, so the code path that would have exposed it was unreachable |
 
 The last row deserves emphasis. **The two errors concealed each other.** The
@@ -263,7 +263,7 @@ better it looks the more convincing the mistake it can conceal.
 
 ## 5. Limitations
 
-**Every predictor in all 61,921 real frames was 1.** Predictors 2–7 carry
+**Every predictor in all 81,172 real frames was 1.** Predictors 2–7 carry
 synthetic evidence only. This is the sharpest limitation here, and it is
 exactly where both bugs lived.
 
@@ -289,7 +289,7 @@ decoder, and any project claiming more should be read carefully.
 | §3.2 before / after | **yes** · with the `git archive` command given there |
 | §3.1 conformance counts | **yes** · `conformance/generate.py`, `run.py` |
 | the eight public sample frames | **yes** · committed under CC BY |
-| §2.5 and §3.1 real-file figures — 61,921 frames, 26.1 billion pixels, 105 configurations, 185 exact | **no.** The files cannot be redistributed, and the script that produced these numbers is not in the repository. They rest on our word |
+| §2.5 and §3.1 real-file figures — 81,172 frames, 34.7 billion pixels, 113 scanner builds, 185 exact | **no.** The files cannot be redistributed, and the script that produced these numbers is not in the repository. They rest on our word |
 | §3.3, the 9% | **no.** Measured by editing the source; no flag exists |
 
 An earlier draft of this paper claimed that every number came from three named
@@ -313,7 +313,7 @@ did not write. Round trips through your own encoder prove the two halves agree
 with each other, which is a weaker statement than it appears.
 
 **For anyone building a corpus.** State what is *not* in it. Ours would look
-authoritative at 61,921 frames while containing exactly one predictor. The
+authoritative at 81,172 frames while containing exactly one predictor. The
 count invites a conclusion the composition does not support.
 
 ---

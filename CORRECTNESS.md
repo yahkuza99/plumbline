@@ -75,7 +75,7 @@ and checking each sentence against an independent implementation.
    interval — one sample. The **Ra predictor** applies to the whole first
    **line** of it. Plumbline did the first and not the second until this was
    caught. Under predictor 1 the two readings compute the same number, which
-   is why 61,921 real frames could not have found it: every one of them uses
+   is why 81,172 real frames could not have found it: every one of them uses
    predictor 1.
 
    T.81 §H.1.1 is what makes the rule well defined: *"For the lossless
@@ -110,9 +110,9 @@ and checking each sentence against an independent implementation.
 
 | Check | Result |
 |---|---|
-| **Lossless-JPEG frames from real files** | **61,921 decoded · 0 refused · 0 crashed** (26.1 billion pixels) |
+| **Lossless-JPEG frames from real files** | **81,172 decoded · 0 refused · 0 crashed** (34.7 billion pixels) |
 | Distinct scanner models in that corpus | **93** |
-| Distinct scanner builds found | 105 (manufacturer × model × modality), from 27 manufacturers |
+| Distinct scanner builds found | 113 (manufacturer × model × modality), from 30 manufacturers |
 | Covering sample re-decoded with the pure-Python reference | **185 exact, 0 differing** |
 | Colour frames | bit-exact against the reference implementation |
 | Synthetic conformance corpus | 1,707 cases — 1,691 must decode, 16 must refuse |
@@ -123,7 +123,7 @@ and checking each sentence against an independent implementation.
 | Test suite | 184 passing, 2 skipped, on a machine without numba; more where numba imports and the real discs are attached |
 
 Comparing every frame against the reference is not possible — it runs at
-about 0.15 Mpx/s, so 26 billion pixels would take about 48 hours. Instead,
+about 0.15 Mpx/s, so 35 billion pixels would take about 64 hours. Instead,
 every frame is decoded by the shipping decoder (which catches refusals,
 crashes and hangs), and one frame from every distinct parameter combination
 is then re-decoded with the reference and compared bit for bit.
@@ -131,19 +131,20 @@ is then re-decoded with the reference and compared bit for bit.
 ### Where that corpus came from, and what it does not cover
 
 **The vendor distribution is uneven**, and unevenly in a way that matters: the
-105 configurations are dominated by Siemens, GE and Philips CT and MR, so a
-machine common in another market may not appear even once. What did and did
-not appear is listed in full below rather than summarised, because that is the
-part a reader can check their own equipment against.
+113 builds are dominated by Siemens, GE and Philips CT and MR, so a machine
+common in another market may not appear even once. What did and did not appear
+is listed in full rather than summarised, because that is the part a reader can
+check their own equipment against.
 
-The 27 manufacturers that do appear are Siemens (and Siemens Healthineers /
-Siemens NM), GE (MEDICAL SYSTEMS and Healthcare), Philips (and Philips Medical
-Systems), **Canon Inc.** (CXDI), **Carestream Health** (DRX-1, DRX-Evolution,
-DRX-Revolution), **FUJIFILM**, **Samsung** (Electronics GC85A / GM85, and
-Medison V8), **HOLOGIC** (Discovery A / W / Wi, DXA), **GE Lunar Prodigy
-Advance** (DXA), **TOSHIBA** (Aquilion ONE / PRIME, and TOSHIBA_MEC_US),
-**MINDRAY** (Resona 7), Agfa, Hitachi (and Hitachi Aloka), DRTECH, E-COM,
-EBM Technologies, Perceptra and Vital Images.
+The 28 named manufacturers, in order of frame count: Philips (and Philips
+Medical Systems), GE (MEDICAL SYSTEMS and Healthcare), Siemens (and Siemens
+Healthineers, Siemens NM), **TOSHIBA** (and TOSHIBA_MEC_US), Vital Images,
+**Samsung** (Electronics and Medison), Hitachi (and Hitachi Aloka Medical),
+**Canon Inc.**, **FUJIFILM**, Perceptra, **MINDRAY**, **HOLOGIC**, E-COM
+Technology, **CARESTREAM HEALTH**, DRTECH, Agfa, and EBM Technologies. A
+further two frames carry no manufacturer tag at all.
+
+**Konica Minolta and Shimadzu do not appear.** Those are the two named gaps.
 
 Earlier versions of this document listed Canon Medical / Toshiba, Carestream,
 Mindray and Samsung as gaps. That was **wrong** — all four are in the table

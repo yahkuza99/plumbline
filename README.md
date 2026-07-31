@@ -59,8 +59,8 @@ also appear in real files](docs/coverage.svg)
 
 | | |
 |---:|:---|
-| **61,921** | lossless-JPEG frames decoded — **0 refused, 0 crashed** |
-| **26.1 billion** | pixels |
+| **81,172** | lossless-JPEG frames decoded — **0 refused, 0 crashed** |
+| **34.7 billion** | pixels |
 | **105** | scanner configurations, from **27** manufacturers |
 | **185 / 0** | covering sample re-decoded with the pure-Python reference: exact / differing |
 
@@ -128,7 +128,7 @@ including ours, until you have run it yourself.
 The limits matter more than the totals, so they are stated first rather than
 buried.
 
-**Every predictor observed in all 61,921 real frames was 1.** The other six are
+**Every predictor observed in all 81,172 real frames was 1.** The other six are
 implemented and swept synthetically, but no scanner here has exercised them.
 That is the sharpest limit in this document — and it is exactly where two bugs
 hid until the conformance corpus was built.
