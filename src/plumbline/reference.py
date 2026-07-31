@@ -616,6 +616,36 @@ def decode(frame: bytes) -> np.ndarray:
             restarted = False
             if interval and since == interval:
                 if used < len(restarts):
+                    # The interval just decoded has to have used up its own
+                    # bytes and no more. The encoder pads to a byte boundary
+                    # before writing the marker, so after the last sample the
+                    # position must be inside the final byte: past it and the
+                    # decoder read into the next interval, short of it and it
+                    # stopped early and the rest of those bits were something
+                    # other than what it decoded.
+                    #
+                    # Seeking without checking is what made a damaged interval
+                    # invisible. One byte dropped inside the first interval of
+                    # a slice and the decoder resynchronised perfectly at the
+                    # marker: the first row-group came back as noise, every
+                    # other row bit-exact, status OK. An image that is right
+                    # everywhere but one band is the hardest kind of wrong to
+                    # notice, because a band of noise reads as anatomy.
+                    #
+                    # This catches the corruptions that change how many bits an
+                    # interval needs, which is about a fifth of those that
+                    # currently decode silently. A bit flip that leaves the
+                    # length alone still gets through, and nothing without a
+                    # checksum can do better. The fifth costs one comparison
+                    # per interval.
+                    boundary = restarts[used] * 8
+                    if not boundary - 8 < bits.bit <= boundary:
+                        raise LosslessJpegError(
+                            f"restart interval {used} decodes to bit "
+                            f"{bits.bit}, and its marker is at bit {boundary}: "
+                            "the interval's samples do not account for the "
+                            "bytes it contains, so the bits read were not the "
+                            "bits the encoder wrote")
                     bits.seek_byte(restarts[used])
                     used += 1
                 since = 0

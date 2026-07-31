@@ -63,6 +63,7 @@ _ABI = 1
 _OK = 0
 _TRUNCATED = -2
 _BAD_CODE = -6
+_BAD_INTERVAL = -7
 
 _lib = None
 try:                                       # pragma: no cover - depends on build
@@ -165,6 +166,10 @@ def decode(frame: bytes) -> np.ndarray:
 
     if status == _TRUNCATED:
         raise LosslessJpegError("the entropy-coded data ends before the image does")
+    if status == _BAD_INTERVAL:
+        raise LosslessJpegError(
+            "a restart interval's samples do not account for the bytes it "
+            "contains, so the bits read were not the bits the encoder wrote")
     if status == _BAD_CODE:
         raise LosslessJpegError(
             "the scan contains a code the frame's Huffman tables do not define")

@@ -55,6 +55,7 @@
 #define PLUMBLINE_BAD_SSSS       -4   /* a symbol above 16 is not a bit count */
 #define PLUMBLINE_BAD_ARGS       -5
 #define PLUMBLINE_BAD_CODE       -6   /* a code the scan's table does not define */
+#define PLUMBLINE_BAD_INTERVAL   -7   /* an interval's samples do not fill its bytes */
 
 #define WINDOW_BITS 16
 #define WINDOW_SIZE (1 << WINDOW_BITS)
@@ -95,6 +96,13 @@ typedef struct {
     uint16_t *raw;
     int32_t  *first;
     int32_t  *undefined;
+    /* Raised where a restart interval's samples do not account for the
+     * bytes between its markers. It rides in the struct every kernel
+     * already receives, for the same reason `undefined` does: the four
+     * scan paths can all report it without four signature changes, and a
+     * check that reaches only some of them is worse than none, because
+     * then the decoders disagree about which files exist. */
+    int32_t  *bad_interval;
 } table_t;
 
 static int build_table(const uint8_t counts[16], const uint8_t *symbols,
@@ -314,8 +322,16 @@ static inline int64_t NAME(SAMPLE *out, int32_t width, int32_t height,         \
     for (int32_t row = 0; row < height; row++) {                               \
         int restarted = 0;                                                     \
         if (rows_per_interval && row && row % rows_per_interval == 0) {        \
-            if (used < restart_count)                                          \
+            if (used < restart_count) {                                        \
+                /* Seeking to the marker without checking is what let one      \
+                 * damaged interval come back as noise with every other row    \
+                 * bit-exact and the status OK — an image that is right        \
+                 * everywhere but one band, which reads as anatomy. */         \
+                int64_t boundary = restarts[used] * 8;                         \
+                *table->bad_interval |=                                        \
+                    (bit <= boundary - 8 || bit > boundary);                   \
                 bit = restarts[used++] * 8;                                    \
+            }                                                                  \
             restarted = 1;                                                     \
         }                                                                      \
                                                                                \
@@ -431,6 +447,15 @@ MONO_DISPATCH(scan_mono_u16, mono_u16, uint16_t)
             col##L = 0;                                                        \
     }
 
+/* Once per segment, not per sample, so it costs nothing measurable. The
+ * encoder pads to the byte boundary before writing the marker, so an
+ * interval's last sample must leave the position inside the final byte. */
+#define LANE_END(L)                                                            \
+    if (segment##L + 1 < segments) {                                           \
+        int64_t boundary = restarts[segment##L] * 8;                           \
+        *table->bad_interval |= (bit##L <= boundary - 8 || bit##L > boundary); \
+    }
+
 #define MAX2(A, B) ((A) > (B) ? (A) : (B))
 
 /* Four whole intervals, all exactly `interval` pixels long. */
@@ -438,6 +463,7 @@ MONO_DISPATCH(scan_mono_u16, mono_u16, uint16_t)
 static int64_t NAME(SAMPLE *out, int32_t width,                                \
                     const uint8_t *data, int64_t data_len,                     \
                     const int64_t *restarts, int32_t interval, int64_t group,  \
+                    int64_t segments,                                          \
                     const table_t *table, int64_t initial, int64_t mask)       \
 {                                                                              \
     LANE_INIT(SAMPLE, 0) LANE_INIT(SAMPLE, 1)                                  \
@@ -447,6 +473,7 @@ static int64_t NAME(SAMPLE *out, int32_t width,                                \
         LANE_STEP(SAMPLE, 0) LANE_STEP(SAMPLE, 1)                              \
         LANE_STEP(SAMPLE, 2) LANE_STEP(SAMPLE, 3)                              \
     }                                                                          \
+    LANE_END(0) LANE_END(1) LANE_END(2) LANE_END(3)                            \
     return MAX2(MAX2(bit0, bit1), MAX2(bit2, bit3));                           \
 }
 
@@ -467,7 +494,8 @@ static int64_t NAME(SAMPLE *out, int32_t width, int64_t npix,                  \
     for (; group + LANES <= whole; group += LANES)                             \
         worst_end = MAX2(worst_end,                                            \
                          GROUP(out, width, data, data_len, restarts,           \
-                               interval, group, table, initial, mask));        \
+                               interval, group, segments, table, initial,      \
+                               mask));                                         \
                                                                                \
     for (; group < segments; group += LANES) {                                 \
         int lanes = (int)(segments - group < LANES ? segments - group : LANES);\
@@ -504,9 +532,16 @@ static int64_t NAME(SAMPLE *out, int32_t width, int64_t npix,                  \
             }                                                                  \
         }                                                                      \
                                                                                \
-        for (int lane = 0; lane < lanes; lane++)                               \
+        for (int lane = 0; lane < lanes; lane++) {                             \
+            int64_t segment = group + lane;                                    \
+            if (segment + 1 < segments) {                                      \
+                int64_t boundary = restarts[segment] * 8;                      \
+                *table->bad_interval |= (bit[lane] <= boundary - 8             \
+                                         || bit[lane] > boundary);             \
+            }                                                                  \
             if (bit[lane] > worst_end)                                         \
                 worst_end = bit[lane];                                         \
+        }                                                                      \
     }                                                                          \
     return worst_end;                                                          \
 }
@@ -542,8 +577,12 @@ static int64_t NAME(SAMPLE *out, int32_t width, int32_t height, int32_t ncomp, \
         for (int32_t col = 0; col < width; col++) {                            \
             int restarted = 0;                                                 \
             if (interval && since == interval) {                               \
-                if (used < restart_count)                                      \
+                if (used < restart_count) {                                    \
+                    int64_t boundary = restarts[used] * 8;                     \
+                    *tables[0].bad_interval |=                                 \
+                        (bit <= boundary - 8 || bit > boundary);               \
                     bit = restarts[used++] * 8;                                \
+                }                                                              \
                 since = 0;                                                     \
                 restarted = 1;                                                 \
                 ra_line = 1;                                                   \
@@ -672,10 +711,12 @@ EXPORT int32_t plumbline_decode(const uint8_t *scan, int64_t scan_len,
     table_t *slots = tables + ntables;
 
     int32_t undefined = 0;
+    int32_t bad_interval = 0;
     uint8_t *cursor = arena;
     int64_t symbol_base = 0;
     for (int32_t entry = 0; entry < ntables; entry++) {
         tables[entry].undefined = &undefined;
+        tables[entry].bad_interval = &bad_interval;
         tables[entry].fused = (int32_t *)cursor;
         cursor += WINDOW_SIZE * sizeof(int32_t);
         tables[entry].first = (int32_t *)cursor;
@@ -767,6 +808,8 @@ EXPORT int32_t plumbline_decode(const uint8_t *scan, int64_t scan_len,
         status = PLUMBLINE_TRUNCATED;
     else if (undefined)
         status = PLUMBLINE_BAD_CODE;
+    else if (bad_interval)
+        status = PLUMBLINE_BAD_INTERVAL;
 
 done:
     free(tables);

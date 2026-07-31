@@ -268,6 +268,7 @@ def _scan(out, width, height, data, restarts, interval, selector,
     used = 0
     since = 0
     undefined = False
+    misaligned = False
     # T.81 §H.1.2.1 puts the whole first line of every restart interval back on
     # Ra, not just the sample the marker precedes; see `reference`, which this
     # must agree with sample for sample. `check_frame` has refused any interval
@@ -281,6 +282,15 @@ def _scan(out, width, height, data, restarts, interval, selector,
             restarted = False
             if interval != 0 and since == interval:
                 if used < restarts.size:
+                    # The interval just decoded must have consumed its own
+                    # bytes and no more: the encoder pads to the byte boundary
+                    # before the marker, so the position must land inside the
+                    # final byte. `position * 8 - held` is the bit just past
+                    # the last one used, the same quantity `ends` reports.
+                    boundary = restarts[used] * 8
+                    reached = position * 8 - held
+                    if reached <= boundary - 8 or reached > boundary:
+                        misaligned = True
                     position = restarts[used]
                     buffer = np.uint64(0)
                     held = np.int64(0)
@@ -309,7 +319,9 @@ def _scan(out, width, height, data, restarts, interval, selector,
             index += 1
 
     ends[0] = position * 8 - held        # the bit just past the last one used
-    faults[0] = 1 if undefined else 0
+    # 2 rather than 1 so the caller can tell the two refusals apart; both
+    # are refusals, and neither may be reported as a decoded image.
+    faults[0] = 2 if misaligned else (1 if undefined else 0)
 
 
 @njit(cache=True, parallel=True)
@@ -445,6 +457,22 @@ def decode(frame: bytes, parallel: bool = False) -> np.ndarray:
     # so refuse instead of handing back an image that merely looks decoded.
     if int(ends.max()) > data.size * 8:
         raise LosslessJpegError("the entropy-coded data ends before the image does")
+    # Each restart interval must end at its own marker. In the parallel path
+    # `ends` already carries where every segment finished, so the check is
+    # plain Python here rather than a second copy inside the kernel; the
+    # sequential path cannot report per-segment ends and does it inline,
+    # raising fault code 2.
+    if faults.size > 1 and restarts.size:
+        boundaries = restarts[:faults.size - 1] * 8
+        reached = ends[:faults.size - 1]
+        if np.any((reached <= boundaries - 8) | (reached > boundaries)):
+            raise LosslessJpegError(
+                "a restart interval's samples do not account for the bytes it "
+                "contains, so the bits read were not the bits the encoder wrote")
+    if int(faults.max()) == 2:
+        raise LosslessJpegError(
+            "a restart interval's samples do not account for the bytes it "
+            "contains, so the bits read were not the bits the encoder wrote")
     if int(faults.max()):
         raise LosslessJpegError(
             "the scan contains a code the frame's Huffman table does not define")

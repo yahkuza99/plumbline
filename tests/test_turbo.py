@@ -350,7 +350,15 @@ def test_random_scans_decode_identically(shape, precision, predictor):
             # `holes` leaves half the code space unclaimed and random bits land
             # in it, so there is no image to agree on — only the refusal, which
             # both decoders must reach.
-            agree = _refused_together if shape == "holes" else _identical
+            # A scan built from random bytes cannot be a conforming restarted frame:
+            # each interval carries whatever length the generator chose, and a
+            # conforming one carries exactly the bytes its samples consume. Since that
+            # became a refusal these are refused, and agreeing on a refusal is agreeing.
+            # Restarted frames that decode are covered by
+            # test_the_parallel_path_matches_on_conforming_frames below, which has a
+            # known right answer rather than two decoders held against each other.
+            agree = (_refused_together
+                     if shape == "holes" or interval else _identical)
             assert agree(frame), (shape, precision, predictor, width, interval, shift)
 
 
@@ -370,15 +378,38 @@ def test_the_tables_under_test_reach_both_decoding_paths():
 # --------------------------------------------------------------------------- #
 
 @pytest.mark.parametrize("width,height", [(7, 5), (16, 4), (3, 11)])
-def test_decoding_restart_intervals_concurrently_changes_nothing(width, height):
-    counts, symbols = _table("staircase", 12)
-    for attempt in range(4):
-        scan = _restarted(width, width * height, width,
-                          width * height + attempt * 8)
-        frame = _frame(width, height, 12, scan, counts, symbols, 1, width, 0)
+@pytest.mark.parametrize("predictor", [1, 4, 7])
+def test_the_parallel_path_matches_on_conforming_frames(width, height, predictor):
+    """Four threads, one thread and the oracle must all produce the image.
+
+    This used to run on scans of random bytes, which agreed with each other but
+    had no right answer to agree *with* — the same weakness that once let a
+    corpus generated from random bytes declare every other decoder wrong. These
+    frames come from the conformance encoder, so a disagreement can be resolved
+    rather than merely noticed.
+    """
+    from conformance import encode as enc
+    from conformance import frames as build
+
+    precision = 12
+    image = np.random.default_rng(width * 31 + height * 7 + predictor).integers(
+        0, 1 << precision, (height, width), dtype=np.int64)
+
+    for rows in (1, 2):
+        interval = width * rows
+        if interval > width * height:
+            continue
+        data, plan = enc.encode(image, precision, predictor,
+                                restart_interval=interval)
+        frame = build.greyscale_frame(width, height, precision, data, *plan[0],
+                                      predictor=predictor,
+                                      restart_interval=interval)
         concurrent = turbo.decode(frame, parallel=True)
         assert np.array_equal(concurrent, turbo.decode(frame))
         assert np.array_equal(concurrent, decode_slowly(frame))
+        assert np.array_equal(np.squeeze(concurrent), image), (
+            f"predictor {predictor}, interval {interval}: the parallel path "
+            "decoded something other than the image that was encoded")
 
 
 def test_intervals_that_do_not_start_on_a_row_stay_sequential():

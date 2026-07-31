@@ -415,7 +415,16 @@ def test_random_scans_decode_identically(shape, precision, predictor):
             # `holes` leaves half the code space unclaimed and random bits land
             # in it, so there is no image to agree on — only the refusal, which
             # both decoders must reach.
-            agree = _refused_together if shape == "holes" else _identical
+            # A scan built from random bytes cannot be a conforming restarted frame:
+            # each interval carries whatever length the generator chose, and a
+            # conforming one carries exactly the bytes its samples consume, padded to
+            # the boundary before the marker. Since that became a refusal these are
+            # refused — and agreeing on a refusal is agreeing, which is all this
+            # assertion ever made. Restarted frames that decode are covered by
+            # test_conforming_restarted_frames_decode_identically, which has a known
+            # right answer rather than two decoders held against each other.
+            agree = (_refused_together
+                     if shape == "holes" or interval else _identical)
             assert agree(frame), (shape, precision, predictor, width, interval, shift)
 
 
@@ -439,7 +448,8 @@ def test_random_colour_scans_decode_identically(shape, precision, predictor):
         frame = _color_frame(4, 4, precision, scan,
                              {0: (counts, symbols), 1: other}, components,
                              predictor, interval)
-        agree = _refused_together if shape == "holes" else _identical
+        # Random bytes cannot form a conforming restarted frame; see above.
+        agree = _refused_together if shape == "holes" or interval else _identical
         assert agree(frame), (shape, precision, predictor, ncomp, interval)
 
 

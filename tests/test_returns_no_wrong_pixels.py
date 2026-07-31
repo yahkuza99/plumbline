@@ -115,6 +115,67 @@ def test_point_transform_output_fits_the_precision_declared(
         f"precision, where the largest expressible sample is {ceiling - 1}")
 
 
+@pytest.mark.parametrize("engine, decode", ENGINES, ids=IDS)
+@pytest.mark.parametrize("rows", [1, 2])
+def test_an_interval_must_end_at_its_own_restart_marker(engine, decode, rows):
+    """One damaged interval, every other row bit-exact, and a clean status.
+
+    A scratched disc drops a byte inside the first interval of a slice. The
+    decoder reads that interval wrong, then finds the marker exactly where it
+    expected and resynchronises perfectly: the first row-group comes back as
+    noise and the remaining rows are correct to the bit. An image that is right
+    everywhere but one band is the hardest kind of wrong to notice, because a
+    band of noise reads as anatomy.
+
+    The signal was sitting there unread. The encoder pads to the byte boundary
+    before the marker, so an interval's last sample has to leave the position
+    inside the final byte; a byte too few or too many puts it somewhere else.
+
+    Checked here on every engine — and on the parallel path too, which decodes
+    each interval in its own lane and so has to carry its own copy of the test.
+    Half the reason this took two attempts is that a check reaching three of
+    the six places made `reference` refuse frames `native` accepted.
+    """
+    width, height, precision = 8, 6, 8
+    interval = width * rows
+    image = np.random.default_rng(11 + rows).integers(
+        0, 1 << precision, (height, width), dtype=np.int64)
+    data, plan = enc.encode(image, precision, 1, restart_interval=interval)
+    frame = build.greyscale_frame(width, height, precision, data, *plan[0],
+                                  predictor=1, restart_interval=interval)
+
+    assert np.array_equal(np.squeeze(decode(frame)), image), (
+        f"{engine} cannot decode the undamaged frame; the rest is meaningless")
+
+    # One byte out of the first interval. Every marker stays where it was, so
+    # the decoder still lands on all of them — that is the whole problem.
+    at = reference.header(frame)["scan_offset"] + 3
+    with pytest.raises(LosslessJpegError):
+        decode(frame[:at] + frame[at + 1:])
+
+
+def test_the_parallel_path_checks_intervals_too():
+    """turbo decodes each interval in a separate lane, so it needs its own."""
+    try:
+        from plumbline import turbo
+    except Exception:                                   # pragma: no cover
+        pytest.skip("numba is not installed")
+    if not turbo.AVAILABLE:                             # pragma: no cover
+        pytest.skip("numba is not installed")
+
+    width, height, precision = 8, 8, 8
+    image = np.random.default_rng(4).integers(
+        0, 1 << precision, (height, width), dtype=np.int64)
+    data, plan = enc.encode(image, precision, 1, restart_interval=width)
+    frame = build.greyscale_frame(width, height, precision, data, *plan[0],
+                                  predictor=1, restart_interval=width)
+
+    assert np.array_equal(np.squeeze(turbo.decode(frame, parallel=True)), image)
+    at = reference.header(frame)["scan_offset"] + 3
+    with pytest.raises(LosslessJpegError):
+        turbo.decode(frame[:at] + frame[at + 1:], parallel=True)
+
+
 def _with_an_ac_table(frame, counts, symbols):
     """The same frame plus a DHT whose class nibble says AC, destination 0."""
     import struct
