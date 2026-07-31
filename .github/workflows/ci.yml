@@ -66,26 +66,25 @@ jobs:
       - run: python -m pytest tests/test_reference.py -q
 
   no-patient-data:
-    name: no medical images in history
+    name: no medical images, anywhere in history
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Scan every blob for a DICOM preamble
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # The same scanner the pre-commit hook runs, over every blob ever
+      # committed. It is deliberately the same file: this check used to exist
+      # twice, and the weaker copy was the one that always ran, because a hook
+      # is opt-in and CI is not.
+      - name: Scan every blob ever committed
+        run: python .githooks/scan_staged.py --history
+
+      # A guard nobody tests is a guard that has already failed.
+      - name: Prove the scanner still catches decoys
         run: |
-          set -e
-          found=0
-          while read -r _ _ sha path; do
-            [ -z "$sha" ] && continue
-            magic=$(git cat-file blob "$sha" 2>/dev/null | dd bs=1 skip=128 count=4 2>/dev/null | tr -d '\0' || true)
-            if [ "$magic" = "DICM" ]; then
-              echo "::error file=$path::DICOM part-10 file in history: $path ($sha)"
-              found=1
-            fi
-          done < <(git rev-list --objects --all | git cat-file --batch-check='%(objecttype) %(objectsize) %(objectname) %(rest)' | grep '^blob')
-          if [ "$found" = "1" ]; then
-            echo "Patient data must never enter this repository."
-            exit 1
-          fi
-          echo "no DICOM files found in any reachable blob"
+          pip install pytest
+          python -m pytest tests/test_hook.py -q
