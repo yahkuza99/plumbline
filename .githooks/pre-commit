@@ -25,25 +25,20 @@ for python in python3 python py; do
     fi
 done
 
-# No Python: fall back to the slow, dependency-free version rather than let the
-# commit through unchecked. A guard that disables itself when a tool is missing
-# is worse than no guard, because it is still trusted.
-staged=$(git diff --cached --name-only --diff-filter=AM)
-[ -z "$staged" ] && exit 0
-blocked=""
-for f in $staged; do
-    [ -f "$f" ] || continue
-    magic=$(dd if="$f" bs=1 skip=128 count=4 2>/dev/null | tr -d '\0')
-    [ "$magic" = "DICM" ] && blocked="$blocked  $f  (DICOM part-10 file)\n"
-    case "$f" in
-        *.dcm|*.DCM|*.ima|*.IMA|*.dicom)
-            blocked="$blocked  $f  (medical image extension)\n" ;;
-    esac
-done
-if [ -n "$blocked" ]; then
-    printf '\nCommit refused. These files look like medical images:\n\n'
-    printf "$blocked"
-    printf '\nPatient data must never enter this repository.\n\n'
-    exit 1
-fi
-exit 0
+# No Python. Refuse.
+#
+# There used to be a shell fallback here. It checked the part-10 preamble and
+# three extensions, and nothing else — so a raw DICOM file with no preamble
+# walked past it, and a file it could not read was treated as clean. That is
+# the same shape as the CI copy that had to be deleted: a second, weaker
+# implementation of a rule, which is the one that runs when it matters.
+#
+# Python is required to develop this project at all. If it is missing, the
+# commit stops rather than proceeding on a check that cannot be trusted.
+printf '
+No Python interpreter found, so the medical-image scan cannot run.
+'
+printf 'Refusing rather than allowing an unchecked commit.
+
+'
+exit 2

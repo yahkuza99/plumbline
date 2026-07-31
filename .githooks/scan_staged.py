@@ -107,18 +107,30 @@ def verdict(name: str, head: bytes) -> str | None:
     if head[257:262] == b"ustar":
         return "tar archive — its contents cannot be checked, so it is refused"
 
-    if UID_STEM in head:
-        # Text may name a UID; that is what source and manifests do. Binary
-        # carrying one came out of a scanner.
-        if not (os.path.splitext(lowered)[1] in SOURCE and _looks_like_text(head)):
-            return "contains a DICOM UID"
+    if UID_STEM in head and not _looks_like_text(head):
+        # Source, documentation and manifests name UIDs; that is their job,
+        # and this project's do it constantly. What comes out of a scanner is
+        # binary. Deciding on the bytes rather than the extension closes the
+        # hole where a raw export called `notes.json` was exempt, and stops
+        # the hook script — which quotes a UID and has no extension at all —
+        # being reported as a patient file.
+        return "contains a DICOM UID"
 
     return None
 
 
 def staged() -> list[str]:
+    """Every path whose content this commit introduces.
+
+    The filter is not `AM`. Git reports a file as `R` when it is similar
+    enough to one that disappeared, and `--diff-filter=AM` skips those — so
+    deleting `notes.cfg` and adding `scan.dcm` with the same bulk of bytes
+    produced a rename, and a file named `.dcm` walked past this scanner
+    untouched. Confirmed against git's own rename detection, which is on by
+    default and needs no argument to trigger.
+    """
     out = subprocess.run(
-        ["git", "diff", "--cached", "--name-only", "--diff-filter=AM"],
+        ["git", "diff", "--cached", "--name-only", "--diff-filter=ACMRT"],
         capture_output=True, text=True, check=True).stdout
     return [line.strip() for line in out.splitlines() if line.strip()]
 
@@ -140,29 +152,76 @@ def scan_worktree(paths) -> list[tuple[str, str]]:
     return blocked
 
 
+def _every_blob() -> list[str]:
+    """Every blob a fetch could reach, plus everything the reflog can restore.
+
+    Two things this deliberately is and is not:
+
+    * It includes `--reflog`, so an old stash entry or a commit dropped by
+      `reset --hard` or `--amend` is still examined. Those are recoverable
+      and were invisible to a plain `--all`.
+    * It reads shas rather than indexing by path. A tag can point straight at
+      a blob, which then has no filename — and the previous version keyed the
+      whole scan on the path, so that blob was never read at all.
+
+    It stops short of `--batch-all-objects`, which also reports loose objects
+    no ref or reflog can reach. Those never leave the machine — `git push`
+    sends reachable objects only — and reporting them means reporting every
+    experiment anyone has ever abandoned.
+    """
+    out = subprocess.run(
+        ["git", "rev-list", "--objects", "--all", "--reflog", "--remotes"],
+        capture_output=True, text=True, check=True).stdout
+    shas = [line.split()[0] for line in out.splitlines() if line.strip()]
+    if not shas:
+        return []
+    kinds = subprocess.run(
+        ["git", "cat-file", "--batch-check=%(objecttype) %(objectname)"],
+        input="\n".join(shas), capture_output=True, text=True, check=True).stdout
+    return [line.split()[1] for line in kinds.splitlines() if line.startswith("blob ")]
+
+
+def _blob_names() -> dict[str, set[str]]:
+    """Every path each blob has ever been committed under.
+
+    A blob keeps one identity and can have many names. Recording only the
+    latest let a file committed as `scan.dcm` and renamed to `notes.txt`
+    afterwards be judged under the harmless name for ever.
+    """
+    listing = subprocess.run(
+        ["git", "cat-file", "--batch-all-objects",
+         "--batch-check=%(objecttype) %(objectname)"],
+        capture_output=True, text=True, check=True).stdout
+    trees = [line.split()[1] for line in listing.splitlines()
+             if line.startswith("tree ")]
+
+    # Every tree, rather than `git rev-list --objects --all`, which prints a
+    # blob once and attaches whichever path it happened to meet first. A file
+    # committed as `scan.dcm` and renamed afterwards came back as `notes.txt`
+    # alone, so a rule that keys on the extension never saw the name that
+    # would have triggered it.
+    names: dict[str, set[str]] = {}
+    for tree in trees:
+        entries = subprocess.run(["git", "ls-tree", tree],
+                                 capture_output=True, text=True).stdout
+        for line in entries.splitlines():
+            head, _, name = line.partition("\t")
+            parts = head.split()
+            if len(parts) >= 3 and parts[1] == "blob" and name:
+                names.setdefault(parts[2], set()).add(name)
+    return names
+
+
 def scan_history() -> list[tuple[str, str]]:
-    """Every blob reachable from any ref, under the path it was committed as.
+    """Every blob in the repository, under every name it has ever carried.
 
     Rewriting history does not remove a blob from a remote that has already
     seen it, so this is the check that has to be right.
     """
-    listing = subprocess.run(["git", "rev-list", "--objects", "--all"],
-                             capture_output=True, text=True, check=True).stdout
-    names = {}
-    for line in listing.splitlines():
-        sha, _, path = line.partition(" ")
-        if path:
-            names[sha] = path
-    if not names:
-        return []
-
-    kinds = subprocess.run(
-        ["git", "cat-file", "--batch-check=%(objecttype) %(objectname)"],
-        input="\n".join(names), capture_output=True, text=True, check=True).stdout
-    blobs = [line.split()[1] for line in kinds.splitlines()
-             if line.startswith("blob ")]
+    blobs = _every_blob()
     if not blobs:
         return []
+    names = _blob_names()
 
     blocked = []
     batch = subprocess.Popen(["git", "cat-file", "--batch"],
@@ -173,16 +232,27 @@ def scan_history() -> list[tuple[str, str]]:
             batch.stdin.flush()
             header = batch.stdout.readline().split()
             if len(header) < 3:
+                # Unreadable object. Refuse rather than skip: a scan that
+                # cannot see something must not report that it saw nothing.
+                blocked.append((sha, "could not be read, so could not be checked"))
                 continue
-            size = int(header[2])
-            body = batch.stdout.read(size)
+            body = batch.stdout.read(int(header[2]))
             batch.stdout.read(1)                        # trailing newline
-            why = verdict(names.get(sha, sha), body[:SCAN_BYTES])
-            if why:
-                blocked.append((f"{names.get(sha, sha)}  ({sha[:10]})", why))
+            head = body[:SCAN_BYTES]
+            aliases = sorted(names.get(sha, {sha}))
+            reasons = [why for why in (verdict(name, head) for name in aliases) if why]
+            if reasons:
+                # Report every name the blob has carried, not the first that
+                # matched. Whoever has to find and purge it needs the name it
+                # was committed under, which is rarely the one it has now.
+                where = aliases[0]
+                if len(aliases) > 1:
+                    where = f"{where}  (also: {', '.join(aliases[1:])})"
+                blocked.append((f"{where}  ({sha[:10]})", reasons[0]))
     finally:
         batch.stdin.close()
-        batch.wait()
+        if batch.wait() != 0:
+            blocked.append(("git cat-file", "exited non-zero; the scan is incomplete"))
     return blocked
 
 

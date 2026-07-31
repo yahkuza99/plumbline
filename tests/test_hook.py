@@ -132,3 +132,78 @@ def test_it_refuses_rather_than_failing_open(tmp_path):
     result = subprocess.run([sys.executable, str(SCANNER)], cwd=tmp_path,
                             capture_output=True, text=True)
     assert result.returncode != 0
+
+
+# --------------------------------------------------------------------------- #
+# The history scan is the mandatory gate — CI runs it and a hook is opt-in —
+# and until these were written it had no test at all. Both cases below got a
+# file past it.
+# --------------------------------------------------------------------------- #
+
+def _repo(tmp_path):
+    for command in (["git", "init", "-q"],
+                    ["git", "config", "user.email", "t@example.invalid"],
+                    ["git", "config", "user.name", "t"]):
+        subprocess.run(command, cwd=tmp_path, check=True)
+
+
+def _history_scan(tmp_path):
+    return subprocess.run([sys.executable, str(SCANNER), "--history"],
+                          cwd=tmp_path, capture_output=True, text=True)
+
+
+def test_history_finds_a_blob_with_no_path(tmp_path):
+    """A tag can point straight at a blob, which then has no filename.
+
+    The scan used to index blobs by path and never read this one at all.
+    """
+    _repo(tmp_path)
+    (tmp_path / "seed.txt").write_bytes(b"seed\n")
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-qm", "seed"], cwd=tmp_path, check=True)
+
+    (tmp_path / "loose").write_bytes(DICOM_PART10)
+    sha = subprocess.run(["git", "hash-object", "-w", "loose"], cwd=tmp_path,
+                         capture_output=True, text=True, check=True).stdout.strip()
+    (tmp_path / "loose").unlink()
+    subprocess.run(["git", "tag", "-a", "t", "-m", "m", sha], cwd=tmp_path, check=True)
+
+    assert _history_scan(tmp_path).returncode == 1
+
+
+def test_history_judges_a_blob_under_every_name_it_ever_had(tmp_path):
+    """Renaming afterwards must not launder a blob.
+
+    Committed as .dcm, renamed to .txt, the scan used to see only the latest
+    name and let it through for ever.
+    """
+    _repo(tmp_path)
+    (tmp_path / "scan.dcm").write_bytes(RAW_DICOM)
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-qm", "one", "--no-verify"],
+                   cwd=tmp_path, check=True)
+    subprocess.run(["git", "mv", "scan.dcm", "notes.txt"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-qm", "two", "--no-verify"],
+                   cwd=tmp_path, check=True)
+
+    result = _history_scan(tmp_path)
+    assert result.returncode == 1
+    assert "scan.dcm" in result.stderr
+
+
+def test_a_rename_is_still_scanned(tmp_path):
+    """Git calls a sufficiently similar add-plus-delete a rename, and the
+    staged-file filter used to skip those."""
+    _repo(tmp_path)
+    (tmp_path / "config.cfg").write_bytes(b"# setting\n" * 200)
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-qm", "base"], cwd=tmp_path, check=True)
+
+    (tmp_path / "scan.dcm").write_bytes(b"# setting\n" * 200 + RAW_DICOM)
+    (tmp_path / "config.cfg").unlink()
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+
+    result = subprocess.run([sys.executable, str(SCANNER)], cwd=tmp_path,
+                            capture_output=True, text=True)
+    assert result.returncode == 1, "a rename slipped past the staged-file filter"
+    assert "scan.dcm" in result.stderr
