@@ -260,17 +260,38 @@ def check_scan(scan: bytes, mcus: int, interval: int) -> None:
                 f"RST{int(expected[index])}: markers must cycle RST0-RST7 in "
                 "order, so one out of sequence means some were lost")
 
-    if interval > 0:
-        # With 1x1 sampling one MCU is one pixel, so an interval that divides
-        # the image into N pieces needs N-1 markers to say where they start.
-        # Fewer, and every sample after the first missing one is decoded from
-        # bits belonging to somewhere else.
-        required = -(-mcus // interval) - 1
-        if found < required:
+    # With 1x1 sampling one MCU is one pixel, so an interval that divides the
+    # image into N pieces needs exactly N-1 markers to say where they start.
+    # A frame with no DRI declares no interval and therefore needs none.
+    required = -(-mcus // interval) - 1 if interval > 0 else 0
+
+    # Exactly, in both directions. This was `found < required`, guarded by
+    # `if interval > 0`, and each half let a whole class of frame through:
+    #
+    # * **Too many markers.** A transcoder rewrites DRI while the entropy
+    #   stream keeps its original spacing, so the header and the data disagree
+    #   about where the restarts are. The decoder resets the predictor at the
+    #   interval the header names and re-syncs at the markers the stream
+    #   carries, and the two stop lining up after the first one.
+    # * **Markers with no DRI at all.** A header rewrite drops the 0xFFDD
+    #   segment, or a frame is lifted out of a multi-frame object where only
+    #   the first fragment carried it. With no interval declared the check did
+    #   not run, the markers were treated as data, and the padding that aligns
+    #   each one to a byte boundary was decoded as entropy.
+    #
+    # Both were measured at three quarters of the pixels wrong on an 8x4
+    # frame, returned as a successful decode by every engine.
+    if found != required:
+        if found > required:
             raise LosslessJpegError(
                 f"the frame declares a restart interval of {interval} but "
-                f"carries {found} of the {required} restart markers that "
-                "interval needs")
+                f"carries {found} restart markers where that interval needs "
+                f"{required}: the header and the entropy data disagree about "
+                "where the restarts are, so neither can be trusted")
+        raise LosslessJpegError(
+            f"the frame declares a restart interval of {interval} but "
+            f"carries {found} of the {required} restart markers that "
+            "interval needs")
 
 
 class _Huffman:
@@ -508,8 +529,20 @@ def decode(frame: bytes) -> np.ndarray:
         raise LosslessJpegError("there is no entropy-coded data in the scan")
 
     out = np.zeros((height, width, components), dtype=np.int64)
+    # What the scan carries is the image after a right shift by Pt, so its
+    # samples are P-Pt bits wide, not P. The default prediction on the line
+    # below already subtracts the shift; the modulus did not, and the two
+    # sitting one line apart disagreed about how wide a sample is.
+    #
+    # For a conforming frame the two are the same number, because every sample
+    # already fits in P-Pt bits and the wider mask never has anything to do.
+    # For a frame whose Al field is wrong — one nibble — the wide mask let
+    # through samples up to 2^P, which `out <<= shift` then multiplied past the
+    # precision the frame declares: a frame calling itself 12-bit came back
+    # holding 34,800, which is eight times what 12 bits can express. Nothing
+    # downstream can tell that from data, so a viewer windows it as if it were.
     default = 1 << (precision - 1 - shift)
-    modulo = 1 << precision
+    modulo = 1 << (precision - shift)
 
     restarts = bits.restarts
     used = 0

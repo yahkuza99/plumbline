@@ -435,7 +435,10 @@ def decode(frame: bytes, parallel: bool = False) -> np.ndarray:
     out = np.empty(height * width, dtype=dtype)
     ends, faults = _run(out, info, data, restarts, tables,
                         np.int64(1) << (precision - 1 - shift),
-                        (np.int64(1) << precision) - 1, parallel)
+                        # P-Pt, not P: the scan holds the image after the
+                        # point transform, so its samples are that wide.
+                        # Matches reference.decode and plumbline.c.
+                        (np.int64(1) << (precision - shift)) - 1, parallel)
 
     # A well-formed scan never asks for a bit the frame does not contain. When it
     # does, the image is truncated and every sample after the break is invented,

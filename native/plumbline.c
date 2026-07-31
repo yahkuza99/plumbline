@@ -667,7 +667,12 @@ EXPORT int32_t plumbline_decode(const uint8_t *scan, int64_t scan_len,
     destuff(scan, scan_len, data, &data_len, restarts, &restart_count);
 
     int64_t initial = (int64_t)1 << (precision - 1 - point_transform);
-    int64_t mask = ((int64_t)1 << precision) - 1;
+    /* P - Pt, not P. The entropy-coded data is the image after a right
+       shift by Pt, so a sample in it is that many bits wide, and `initial`
+       one line above already says so. Masking with the wider value let a
+       frame with a wrong Al field return samples the shift then pushed
+       past the precision the frame declares. */
+    int64_t mask = ((int64_t)1 << (precision - point_transform)) - 1;
 
     int64_t npix = (int64_t)width * height;
     int64_t segments = interval > 0 ? (npix + interval - 1) / interval : 0;
