@@ -672,6 +672,22 @@ EXPORT int32_t plumbline_decode(const uint8_t *scan, int64_t scan_len,
     int64_t npix = (int64_t)width * height;
     int64_t segments = interval > 0 ? (npix + interval - 1) / interval : 0;
 
+    /* A declared restart interval needs a marker at the end of every interval
+     * but the last. Without this check the scan loops still restarted the
+     * predictor at each boundary while carrying on from wherever the bitstream
+     * happened to be, and returned PLUMBLINE_OK over pixels that are not the
+     * image — which is the one outcome this library exists to prevent.
+     *
+     * The Python caller rejects such a scan before it gets here, so no shipped
+     * path reached this. But `build_table` a hundred lines up defends itself
+     * against a caller that skips that validation, and the comment there says
+     * the library is safe for anyone who calls it directly. That was true of
+     * the tables and not of the scan. It is true of both now. */
+    if (segments > 1 && restart_count < segments - 1) {
+        status = PLUMBLINE_TRUNCATED;
+        goto done;
+    }
+
     /* Interleaving pays when each interval is one row: the four lanes then
      * write within a few kilobytes of each other and share the cache. On the
      * one real disc with 25-row intervals it measured *slower* than the
