@@ -76,11 +76,11 @@ then one frame from each distinct parameter combination is re-decoded with the
 reference and compared bit for bit.
 
 Earlier versions of this file said 81,172 frames and 34.7 billion pixels. That
-count was taken before the survey script existed and cannot be reproduced, and
-the archive has had discs added and removed since. The figures above are the
-ones a reader can check; the older ones are recorded here rather than quietly
-replaced, because a number that changed without explanation is worse than
-either version of it.
+figure cannot be traced to a run that finished: the project's own working notes
+record the pass it came from stopping partway, and the script was not kept. The
+table above is the first complete count, and the first one anybody else can
+repeat. The old number stays here rather than being quietly replaced, because a
+figure that changes without explanation is worse than either version of it.
 
 **Every frame in the archive is `1.2.840.10008.1.2.4.70`. Not one is `.57`.**
 Both syntaxes are implemented and both are swept by the synthetic corpus, but
