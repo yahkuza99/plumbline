@@ -103,3 +103,52 @@ def test_python_refuses_it_too():
     for decode in (native.decode, reference.decode):
         with pytest.raises(reference.LosslessJpegError):
             decode(damaged)
+
+
+PLUMBLINE_BAD_ARGS = -5
+
+
+def _call_abi(frame, *, interval=0, slot_comps=None, slot_tables=None):
+    """plumbline_decode with arguments a foreign binding could plausibly pass."""
+    info = reference.header(frame)
+    counts, symbols, symbol_counts, tables = native._tables(info)
+    comps = np.array(slot_comps if slot_comps is not None
+                     else native._slots(info), dtype=np.int32)
+    slots = (np.array(slot_tables, dtype=np.int32)
+             if slot_tables is not None else tables)
+    scan = bytes(frame[info["scan_offset"]:])
+    out = np.empty(info["height"] * info["width"], dtype=np.uint8)
+
+    return native._lib.plumbline_decode(
+        scan, len(scan), info["width"], info["height"], info["components"],
+        info["precision"], info["predictor"], info["point_transform"],
+        interval, len(symbol_counts),
+        counts.ctypes.data, symbols.ctypes.data, symbol_counts.ctypes.data,
+        slots.ctypes.data, comps.ctypes.data, out.ctypes.data, 0)
+
+
+@pytest.mark.parametrize("kwargs, why", [
+    ({"interval": -8}, "a negative interval reset the predictor on a schedule "
+                       "matching no data, and returned OK over it"),
+    ({"interval": 3}, "an interval that is not a whole number of MCU-rows has "
+                      "no first line for T.81 H.1.2.1 to name"),
+    ({"slot_comps": [1 << 28]}, "indexed the output buffer past its end — a "
+                                "heap write, not a read"),
+    ({"slot_tables": [999]}, "indexed the table array past its end"),
+])
+def test_the_abi_refuses_arguments_no_frame_could_produce(kwargs, why):
+    """The comment above build_table promises this; it did not hold.
+
+    None of these is reachable through `native.decode`: DRI is 16-bit
+    unsigned, and the slot arrays are built here rather than read from a file.
+    They are reachable from the ABI this file documents as callable without
+    the Python layer, which is what a Rust or C# binding does.
+    """
+    frame, _ = _frame_with_restarts()
+    assert _call_abi(frame, **kwargs) == PLUMBLINE_BAD_ARGS, why
+
+
+def test_the_abi_still_accepts_what_native_decode_sends_it():
+    """The checks must cost nothing to the arguments the shipped path uses."""
+    frame, _ = _frame_with_restarts()
+    assert _call_abi(frame, interval=WIDTH) == PLUMBLINE_OK

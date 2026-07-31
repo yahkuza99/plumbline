@@ -113,3 +113,41 @@ def test_point_transform_output_fits_the_precision_declared(
     assert not over, (
         f"{engine} returned {over} from a frame declaring {precision}-bit "
         f"precision, where the largest expressible sample is {ceiling - 1}")
+
+
+def _with_an_ac_table(frame, counts, symbols):
+    """The same frame plus a DHT whose class nibble says AC, destination 0."""
+    import struct
+    permuted = list(symbols)
+    permuted[0], permuted[-1] = permuted[-1], permuted[0]
+    body = bytes([0x10]) + bytes(counts) + bytes(permuted)
+    segment = b"\xff\xc4" + struct.pack(">H", len(body) + 2) + body
+    at = frame.index(b"\xff\xda")
+    return frame[:at] + segment + frame[at:]
+
+
+@pytest.mark.parametrize("engine, decode", ENGINES, ids=IDS)
+def test_an_ac_table_does_not_overwrite_the_dc_table_the_scan_uses(engine, decode):
+    """T.81 B.2.4.2 gives Tc and Th four slots each; we merged them.
+
+    The DHT byte is the class in the high nibble — 0 for DC, 1 for AC — and the
+    destination in the low one. Masking the class away meant a table written as
+    0x10 landed on the slot the lossless scan actually reads, which is DC 0.
+    A frame carrying both came back with every pixel wrong and nothing said.
+
+    Keying on the whole byte leaves the AC table somewhere nothing looks for
+    it. That is deliberately not a refusal: a lossless scan selects DC tables
+    only, so a file that also carries an AC table it never uses is not
+    malformed, and refusing it would cost a readable image for nothing.
+    """
+    image = np.random.default_rng(5).integers(
+        0, 1 << PRECISION, (HEIGHT, WIDTH), dtype=np.int64)
+    data, plan = enc.encode(image, PRECISION, 1)
+    counts, symbols = plan[0]
+    frame = build.greyscale_frame(WIDTH, HEIGHT, PRECISION, data,
+                                  counts, symbols, predictor=1)
+
+    decoded = np.squeeze(decode(_with_an_ac_table(frame, counts, symbols)))
+    assert np.array_equal(decoded, image), (
+        f"{engine} used the AC table for a DC scan: "
+        f"{int((decoded != image).sum())} of {image.size} pixels differ")

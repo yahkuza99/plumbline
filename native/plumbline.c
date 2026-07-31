@@ -619,6 +619,37 @@ EXPORT int32_t plumbline_decode(const uint8_t *scan, int64_t scan_len,
             || !slot_tables || !slot_comps || !out)
         return PLUMBLINE_BAD_ARGS;
 
+    /* The four checks below are about the caller, not the file.
+     *
+     * The comment above build_table says this function is safe to call
+     * without the Python layer in front of it, and a binding in another
+     * language is invited to do exactly that. It was not true of these
+     * arguments. `interval` negative made the scan loops reset the predictor
+     * on a schedule that never matched the data and return PLUMBLINE_OK over
+     * pixels that were not the image; an out-of-range `slot_comps` entry
+     * indexed the output buffer past its end and took the process down with
+     * an access violation — a heap write, in a program that by definition
+     * also holds patient data.
+     *
+     * None of it is reachable from a JPEG frame through `native.decode`: DRI
+     * is a 16-bit unsigned field, and the slot arrays are built by
+     * `native._tables` rather than read from the file. It is reachable from
+     * the ABI this file documents, which is the point. */
+    if (interval < 0 || (interval > 0 && (width == 0 || interval % width != 0)))
+        return PLUMBLINE_BAD_ARGS;
+    for (int32_t slot = 0; slot < ncomp; slot++) {
+        if (slot_tables[slot] < 0 || slot_tables[slot] >= ntables)
+            return PLUMBLINE_BAD_ARGS;
+        if (slot_comps[slot] < 0 || slot_comps[slot] >= ncomp)
+            return PLUMBLINE_BAD_ARGS;
+    }
+    /* `out` is sized by the caller and its length is not passed in, so this
+     * cannot verify it — bounding it would mean adding a parameter and
+     * bumping PLUMBLINE_ABI. What it can do is refuse the arguments that made
+     * a correctly sized buffer overrun anyway, which is every case above. The
+     * remaining contract is one line: `out` holds width * height * ncomp
+     * samples of the width `wide` selects. */
+
     int32_t status = PLUMBLINE_OK;
 
     /* One arena for everything this call allocates. The destuffed data goes

@@ -458,7 +458,22 @@ def header(frame: bytes) -> dict:
                 if len(segment) < pos + 17:
                     raise LosslessJpegError(
                         "DHT segment ends inside a table's code-length counts")
-                identifier = segment[pos] & 0x0F
+                # The whole byte, not its low nibble. T.81 B.2.4.2 splits it
+                # into Tc — 0 for a DC table, 1 for an AC one — and Th, the
+                # destination. Those are two separate sets of four slots, and
+                # masking Tc away merged them: an AC table with Th=0, byte
+                # 0x10, landed on top of the DC table the scan then used, and
+                # a frame carrying both came back with every pixel wrong and
+                # no complaint.
+                #
+                # Keying on the full byte leaves an AC table stored where
+                # nothing looks for it, rather than refusing the frame. A
+                # lossless scan selects DC tables only (its Td field is the
+                # DC destination), so a file that carries an AC table it never
+                # uses is not malformed — it is just a file some tool wrote
+                # both halves of, and refusing it would cost a readable image
+                # for nothing.
+                identifier = segment[pos]
                 counts = list(segment[pos + 1:pos + 17])
                 total = sum(counts)
                 if len(segment) < pos + 17 + total:
