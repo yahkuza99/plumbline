@@ -50,7 +50,7 @@ history carried over.
 
 Both were in all three decoders at once, because all three were written from
 the same reading. Neither could have been caught by the real-frame corpus:
-every one of its 81,172 frames uses predictor 1, which makes the first change
+every one of its 68,369 frames uses predictor 1, which makes the first change
 a no-op, and the second lived in the conformance *encoder* rather than in the
 decoders. Both were found by reading T.81 Annex H sentence by sentence and
 checking each against libjpeg, which shares no code with this project.
@@ -117,7 +117,7 @@ heavy dependency that lags each new Python release by months.
 
 ### Correctness
 
-- 81,172 lossless-JPEG frames from real files (34.7 billion pixels, 113 scanner
+- 68,369 lossless-JPEG frames from real files (27.6 billion pixels, 114 scanner
   models): **0 refused, 0 crashed**. One frame from each of the 137 parameter
   combinations re-decoded with the pure-Python reference: **185 exact, 0
   differing**.

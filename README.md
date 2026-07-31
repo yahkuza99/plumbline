@@ -57,18 +57,35 @@ also appear in real files](docs/coverage.svg)
 
 ### Against real files
 
+Surveyed 31 July 2026 with `conformance/survey_discs.py`, which ships with this
+repository. The archive cannot be redistributed; the script that counts it can,
+so point it at your own discs and compare.
+
 | | |
 |---:|:---|
-| **81,172** | lossless-JPEG frames decoded — **0 refused, 0 crashed** |
-| **34.7 billion** | pixels |
-| **113** | scanner builds (manufacturer × model × modality), from **30** distinct manufacturer strings |
+| **151,146** | files walked, of which **107,473** are DICOM |
+| **68,369** | lossless-JPEG frames decoded — **0 refused, 0 crashed, 0 unreadable** |
+| **27.6 billion** | pixels |
+| **114** | scanner builds (manufacturer × model × modality), from **32** distinct manufacturer strings in **18** vendor families |
 | **185 / 0** | covering sample re-decoded with the pure-Python reference: exact / differing |
 
 Comparing every frame against the reference is not possible — it runs at about
-0.15 Mpx/s, so 34.7 billion pixels would take about 64 hours. So every frame goes through
-the shipping decoder, which catches refusals, crashes and hangs; then one frame
-from each distinct parameter combination is re-decoded with the reference and
-compared bit for bit.
+0.15 Mpx/s, so 27.6 billion pixels would take about 51 hours. So every frame
+goes through the shipping decoder, which catches refusals, crashes and hangs;
+then one frame from each distinct parameter combination is re-decoded with the
+reference and compared bit for bit.
+
+Earlier versions of this file said 81,172 frames and 34.7 billion pixels. That
+count was taken before the survey script existed and cannot be reproduced, and
+the archive has had discs added and removed since. The figures above are the
+ones a reader can check; the older ones are recorded here rather than quietly
+replaced, because a number that changed without explanation is worse than
+either version of it.
+
+**Every frame in the archive is `1.2.840.10008.1.2.4.70`. Not one is `.57`.**
+Both syntaxes are implemented and both are swept by the synthetic corpus, but
+the real-file evidence covers only the second, and that is the kind of gap this
+section exists to show rather than to average away.
 
 ### Against the specification
 
@@ -128,7 +145,7 @@ including ours, until you have run it yourself.
 The limits matter more than the totals, so they are stated first rather than
 buried.
 
-**Every predictor observed in all 81,172 real frames was 1.** The other six are
+**Every predictor observed in all 68,369 real frames was 1.** The other six are
 implemented and swept synthetically, but no scanner here has exercised them.
 That is the sharpest limit in this document — and it is exactly where two bugs
 hid until the conformance corpus was built.

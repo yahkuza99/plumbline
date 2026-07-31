@@ -75,7 +75,7 @@ and checking each sentence against an independent implementation.
    interval — one sample. The **Ra predictor** applies to the whole first
    **line** of it. Plumbline did the first and not the second until this was
    caught. Under predictor 1 the two readings compute the same number, which
-   is why 81,172 real frames could not have found it: every one of them uses
+   is why 68,369 real frames could not have found it: every one of them uses
    predictor 1.
 
    T.81 §H.1.1 is what makes the rule well defined: *"For the lossless
@@ -110,9 +110,11 @@ and checking each sentence against an independent implementation.
 
 | Check | Result |
 |---|---|
-| **Lossless-JPEG frames from real files** | **81,172 decoded · 0 refused · 0 crashed** (34.7 billion pixels) |
-| Distinct scanner models in that corpus | **93** |
-| Distinct scanner builds found | 113 (manufacturer × model × modality), from 30 distinct manufacturer strings |
+| **Lossless-JPEG frames from real files** | **68,369 decoded · 0 refused · 0 crashed · 0 unreadable** (27.6 billion pixels) |
+| …out of | 151,146 files walked, 107,473 of them DICOM |
+| Distinct scanner models in that corpus | **89** |
+| Distinct scanner builds found | 114 (manufacturer × model × modality), from 32 distinct manufacturer strings in 18 vendor families |
+| Transfer syntaxes seen in real files | `1.2.840.10008.1.2.4.70` only — **not one `.57` frame exists in the archive** |
 | Covering sample re-decoded with the pure-Python reference | **185 exact, 0 differing** |
 | Colour frames | bit-exact against the reference implementation |
 | Synthetic conformance corpus | 1,707 cases — 1,691 must decode, 16 must refuse |
@@ -120,10 +122,10 @@ and checking each sentence against an independent implementation.
 | Plumbline against that corpus | **1,707 exact · 0 refused · 0 wrong** |
 | pylibjpeg (shares no code with us) against it | **1,690 exact, 17 disagreements** — 6 malformed frames it accepts, 11 point-transform cases it does not implement |
 | Silent disagreements between our own implementations | **0** |
-| Test suite | 329 passing, 2 skipped, on a machine without numba; more where numba imports and the real discs are attached |
+| Test suite | 405 passing, 2 skipped, on a machine without numba; more where numba imports and the real discs are attached |
 
 Comparing every frame against the reference is not possible — it runs at
-about 0.15 Mpx/s, so 35 billion pixels would take about 64 hours. Instead,
+about 0.15 Mpx/s, so 27.6 billion pixels would take about 51 hours. Instead,
 every frame is decoded by the shipping decoder (which catches refusals,
 crashes and hangs), and one frame from every distinct parameter combination
 is then re-decoded with the reference and compared bit for bit.
@@ -131,31 +133,56 @@ is then re-decoded with the reference and compared bit for bit.
 ### Where that corpus came from, and what it does not cover
 
 **The vendor distribution is uneven**, and unevenly in a way that matters: the
-113 builds are dominated by Siemens, GE and Philips CT and MR, so a machine
-common in another market may not appear even once. What did and did not appear
-is listed in full rather than summarised, because that is the part a reader can
-check their own equipment against.
+114 builds are dominated by Philips, Siemens and GE CT and MR, so a machine
+common in another market may not appear even once. Everything that did appear
+is listed below in full rather than summarised, because coverage is the one
+claim here a reader can check their own equipment against.
 
-The corpus holds **30 distinct `Manufacturer` strings**, which are fewer than
-30 companies: vendors rename themselves, and the same scanner writes the tag
-several ways. Grouped by vendor, **17 families** appear, written below as **24
-of those 30 strings** — in order of frame count:
+Every `Manufacturer` string in the archive, with the number of frames carrying
+it. Thirty-two strings, eighteen companies: vendors rename themselves, the same
+scanner writes the tag several ways, and one machine writes it wrapped in
+literal quotation marks.
 
-Philips (and Philips Medical Systems), GE (MEDICAL SYSTEMS and Healthcare),
-Siemens (and Siemens Healthineers, Siemens NM), **TOSHIBA** (and
-TOSHIBA_MEC_US), Vital Images, **Samsung** (Electronics and Medison), Hitachi
-(and Hitachi Aloka Medical), **Canon Inc.**, **FUJIFILM**, Perceptra,
-**MINDRAY**, **HOLOGIC**, E-COM Technology, **CARESTREAM HEALTH**, DRTECH,
-Agfa, and EBM Technologies. A further two frames carry no manufacturer tag at
-all.
+| Frames | `Manufacturer` |
+|---:|:---|
+| 19,687 | `GE MEDICAL SYSTEMS` |
+| 19,469 | `Philips` |
+| 12,293 | `Siemens Healthineers` |
+| 6,131 | `Philips Medical Systems` |
+| 5,695 | `SIEMENS` |
+| 3,200 | `Siemens` |
+| 1,016 | `GE HEALTHCARE` |
+| 184 | `GE Healthcare` |
+| 102 | `TOSHIBA` |
+| 87 | `(untagged)` |
+| 86 | `Vital Images, Inc.` |
+| 79 | `Samsung Electronics` |
+| 74 | `Hitachi, Ltd.` |
+| 45 | `Canon Inc.` |
+| 38 | `Hitachi Aloka Medical,Ltd.` |
+| 36 | `SAMSUNG MEDISON CO., LTD.` |
+| 27 | `CANON_MEC` |
+| 23 | `TOSHIBA_MEC_US` |
+| 19 | `Perceptra` |
+| 19 | `FUJIFILM Corporation` |
+| 11 | `MINDRAY` |
+| 10 | `HOLOGIC` |
+| 8 | `E-COM Technology Limited.` |
+| 7 | `CARESTREAM HEALTH` |
+| 6 | `Carestream Health` |
+| 6 | `DRTECH` |
+| 3 | `SIEMENS NM` |
+| 3 | `Agfa` |
+| 2 | `"GE Healthcare"` |
+| 1 | `EBM Technologies, Inc.` |
+| 1 | `GE Medical Systems` |
+| 1 | `LG Electronics` |
 
-**The remaining six strings are not written down here, and that is a gap in
-this document rather than in the corpus.** Earlier drafts of this section gave
-the count as 27, 28 and 30 in three different places, because it was counted at
-three different times as discs were added and never reconciled afterwards. The
-figure a reader should use is the one in the table above, which came from the
-last full pass; the list is a subset of it, and the recount that would close
-the gap is on the maintenance list rather than done.
+Three earlier drafts of this section gave the count as 27, 28 and 30, and named
+24 strings between them. None of those numbers could be reproduced, because the
+script that produced them was never kept. The table above came from
+`conformance/survey_discs.py`, which now ships, so the next person to disagree
+with it can re-run it rather than take our word.
 
 **Konica Minolta and Shimadzu do not appear.** Those are the two named gaps.
 
