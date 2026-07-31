@@ -61,11 +61,11 @@ also appear in real files](docs/coverage.svg)
 |---:|:---|
 | **81,172** | lossless-JPEG frames decoded — **0 refused, 0 crashed** |
 | **34.7 billion** | pixels |
-| **105** | scanner configurations, from **27** manufacturers |
+| **113** | scanner builds (manufacturer × model × modality), from **30** distinct manufacturer strings |
 | **185 / 0** | covering sample re-decoded with the pure-Python reference: exact / differing |
 
 Comparing every frame against the reference is not possible — it runs at about
-0.15 Mpx/s, so 26 billion pixels would take a day. So every frame goes through
+0.15 Mpx/s, so 34.7 billion pixels would take about 64 hours. So every frame goes through
 the shipping decoder, which catches refusals, crashes and hangs; then one frame
 from each distinct parameter combination is re-decoded with the reference and
 compared bit for bit.

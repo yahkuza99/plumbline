@@ -122,7 +122,7 @@ behaviour they are relying on.
 ### 2.5 Real files
 
 81,172 lossless-JPEG frames — 34.7 billion pixels, 113 distinct
-(manufacturer, model, modality) builds from 28 named manufacturers — were decoded to detect refusals, crashes and hangs.
+(manufacturer, model, modality) builds from 30 distinct manufacturer strings — were decoded to detect refusals, crashes and hangs.
 Comparing every frame against the pure-Python reference is impractical at
 ~0.15 Mpx/s, so one frame from each distinct parameter combination was
 re-decoded and compared bit for bit.

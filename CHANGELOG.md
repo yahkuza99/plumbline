@@ -124,7 +124,7 @@ heavy dependency that lags each new Python release by months.
 - 11/11 real discs bit-exact at full size, every frame · colour bit-exact ·
   a 1,707-case conformance corpus over table shape × precision × predictor ×
   components × restart interval × point transform, all **1,707 exact, 0
-  wrong** · **zero silent disagreements** · 184 tests passing, 2 skipped, on a machine without numba.
+  wrong** · **zero silent disagreements** · 329 tests passing, 2 skipped, on a machine without numba.
 - Our three implementations are verified against the pure-Python reference in
   this repository. The conformance corpus is additionally run against
   decoders that share no code with us, because agreement among three

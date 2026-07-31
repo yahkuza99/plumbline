@@ -2,7 +2,7 @@
 
 `reference.py` is the oracle: readable, dependency-free, and slow. `turbo.py`
 accelerates it with numba, which costs a JIT pause on first use and ships LLVM
-with the application. This module accelerates it with ~350 lines of C11
+with the application. This module accelerates it with 739 lines of C11 (494 of them code)
 (`native/plumbline.c`), compiled once at build time into a small shared
 library that this file loads through ctypes, and must agree with the oracle
 bit for bit — `tests/test_native.py` decodes real discs and random scans
