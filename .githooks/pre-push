@@ -1,0 +1,34 @@
+#!/bin/sh
+# The last gate before bytes leave this machine for good.
+#
+# pre-commit checks what one commit introduces. That is the wrong scope for the
+# thing this project is actually afraid of, because a commit made before
+# `git config core.hooksPath .githooks` was run — in a fresh clone, say — or one
+# made with --no-verify, was never checked at all, and travels on the next push
+# like any other. A push is the only moment where "every blob in this history"
+# is both knowable and still preventable: afterwards the remote has it, and
+# rewriting history does not take it back.
+#
+# So this runs the history scan, not the index scan. It is slower. It runs once
+# per push rather than once per commit, and the thing it prevents cannot be
+# undone.
+
+set -e
+
+root=$(git rev-parse --show-toplevel)
+
+for candidate in python3 python py; do
+    if command -v "$candidate" >/dev/null 2>&1; then
+        "$candidate" "$root/.githooks/scan_staged.py" --history
+        exit $?
+    fi
+done
+
+echo "" >&2
+echo "No Python interpreter found, so this repository's history could not be" >&2
+echo "scanned for patient data before pushing." >&2
+echo "" >&2
+echo "Refusing the push rather than sending unchecked bytes to a remote that" >&2
+echo "cannot be made to forget them." >&2
+echo "" >&2
+exit 2

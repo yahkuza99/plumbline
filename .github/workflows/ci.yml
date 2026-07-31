@@ -76,10 +76,22 @@ jobs:
         with:
           python-version: "3.12"
 
-      # The same scanner the pre-commit hook runs, over every blob ever
-      # committed. It is deliberately the same file: this check used to exist
-      # twice, and the weaker copy was the one that always ran, because a hook
-      # is opt-in and CI is not.
+      # `fetch-depth: 0` gets branches and tags. It does not get refs outside
+      # `refs/heads/*` and `refs/tags/*` — notes, `refs/replace`, anything a
+      # tool invented — so a blob attached with `git notes add` and pushed
+      # explicitly was present on the remote and absent from the gate that is
+      # supposed to be the mandatory one. Fetch those too before scanning.
+      - name: Fetch every ref, not only branches and tags
+        run: |
+          git fetch --no-tags --prune origin \
+            '+refs/notes/*:refs/notes/*' \
+            '+refs/replace/*:refs/replace/*' || true
+          git for-each-ref --format='%(refname)' | sed 's/^/  /'
+
+      # The same scanner the pre-commit and pre-push hooks run, over every blob
+      # ever committed. It is deliberately the same file: this check used to
+      # exist twice, and the weaker copy was the one that always ran, because a
+      # hook is opt-in and CI is not.
       - name: Scan every blob ever committed
         run: python .githooks/scan_staged.py --history
 
