@@ -30,18 +30,19 @@ runtime dependency.
 
 ## Why this exists
 
-Two problems with the decoders already available for this format.
-
-**Speed.** The one Python reaches for by default runs at about 4.6 Mpx/s.
+**Speed.** The decoder Python reaches for by default runs at about 4.6 Mpx/s.
 The format allows roughly 25× that on the same hardware.
 
-**Correctness.** A widely used alternative returns **silently wrong pixels**
-on every frame carrying restart markers — across several manufacturers, with
-no error and no warning. Restart markers are common; the corruption is
-structured, so it looks like image noise rather than a fault.
+**Behaviour on input the standard does not define.** Run a corpus of
+malformed frames — a truncated scan, a table the scan names but nobody
+declares, restart markers out of sequence — through four independent decoders
+and you get four different answers about how many of them are images. None
+documents its choice. For a caller reading files of unknown origin that is
+the property that matters most, and it is not one you can add from outside.
 
-The second problem is the one that matters, and it is not fixable from
-outside. A decoder either refuses what it cannot read or it does not.
+This decoder refuses all sixteen. That is the only claim it makes that the
+others do not, and `conformance/run.py` will tell you the same thing about
+whatever you have installed.
 
 ---
 
