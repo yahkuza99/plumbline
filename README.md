@@ -75,12 +75,25 @@ goes through the shipping decoder, which catches refusals, crashes and hangs;
 then one frame from each distinct parameter combination is re-decoded with the
 reference and compared bit for bit.
 
-Earlier versions of this file said 81,172 frames and 34.7 billion pixels. That
-figure cannot be traced to a run that finished: the project's own working notes
-record the pass it came from stopping partway, and the script was not kept. The
-table above is the first complete count, and the first one anybody else can
-repeat. The old number stays here rather than being quietly replaced, because a
-figure that changes without explanation is worse than either version of it.
+Earlier versions of this file said 81,172 frames and 34.7 billion pixels, and
+the difference is worth stating rather than burying. Between the two counts the
+archive **grew** — 144,978 files to 151,146, 101,854 DICOM to 107,473 — so a
+complete count could not honestly come out 19% smaller. The two numbers were
+not produced the same way.
+
+The earlier one cannot be traced to a run at all: no script survives, and the
+figure appears in no record of a pass that finished. What does survive is a
+note that the lossless proportion was estimated by sampling 6,000 files, and
+`101,854 × 60% × 1.33 frames per file` gives 81,279 — within 0.13% of 81,172.
+The measured proportion is close to that estimate, at 61.7%; the measured
+frames per file is **1.031**, not 1.33. That arithmetic is a plausible account
+of where the number came from and it is offered as no more than that, because
+one coincidence is not a provenance.
+
+The table above is the first complete count and the first one anybody else can
+repeat. The old figure stays here because a number that changes without
+explanation is worse than either version of it — and because "we extrapolated
+and did not say so" is exactly the failure this document exists to prevent.
 
 **Every frame in the archive is `1.2.840.10008.1.2.4.70`. Not one is `.57`.**
 Both syntaxes are implemented and both are swept by the synthetic corpus, but
