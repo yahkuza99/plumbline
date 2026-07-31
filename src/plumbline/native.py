@@ -150,7 +150,8 @@ def decode(frame: bytes) -> np.ndarray:
     counts, symbols, symbol_counts, slot_tables = _tables(info)
     slot_comps = np.array(order, dtype=np.int32)
     scan = bytes(frame[info["scan_offset"]:])
-    check_scan(scan, height * width, info["restart_interval"])
+    check_scan(scan, height * width, info["restart_interval"],
+               height * width * components)
 
     out = np.empty(height * width * components, dtype=dtype)
     status = _lib.plumbline_decode(

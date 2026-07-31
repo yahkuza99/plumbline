@@ -525,3 +525,36 @@ def test_real_discs_decode_identically(path):
     count = int(getattr(dataset, "NumberOfFrames", 1) or 1)
     frame = next(iter(generate_pixel_data_frame(dataset.PixelData, count)))
     assert _identical(frame)
+
+
+# --------------------------------------------------------------------------- #
+# restart intervals, on frames an encoder actually produced
+#
+# The random-scan tests above can no longer decode a restarted frame, because a
+# conforming interval carries exactly the bytes its samples consume and a
+# random one does not. That is the right refusal and it costs real coverage, so
+# this replaces it with frames built by the conformance encoder — which is
+# stronger than what was lost, because these have a known correct answer rather
+# than only two decoders to compare against each other.
+# --------------------------------------------------------------------------- #
+
+@pytest.mark.parametrize("predictor", [1, 2, 3, 4, 5, 6, 7])
+@pytest.mark.parametrize("precision", [2, 8, 12, 16])
+def test_conforming_restarted_frames_decode_identically(precision, predictor):
+    from conformance import encode as enc
+    from conformance import frames as build
+
+    width, height = 7, 6
+    image = np.random.default_rng(precision * 8 + predictor).integers(
+        0, 1 << precision, (height, width), dtype=np.int64)
+
+    for interval in (width, width * 2, width * 3):
+        data, plan = enc.encode(image, precision, predictor,
+                                restart_interval=interval)
+        frame = build.greyscale_frame(width, height, precision, data, *plan[0],
+                                      predictor=predictor,
+                                      restart_interval=interval)
+        assert _identical(frame), (precision, predictor, interval)
+        assert np.array_equal(np.squeeze(native.decode(frame)), image), (
+            f"predictor {predictor}, precision {precision}, interval "
+            f"{interval}: the decoded image is not the one encoded")

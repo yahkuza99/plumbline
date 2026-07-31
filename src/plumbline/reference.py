@@ -24,11 +24,14 @@ Four details decide whether an implementation is correct:
   mantissa bits follow. Reading sixteen bits instead corrupts the rest of the
   image, because the predictor carries the error forward.
 * the difference is added to the prediction modulo 2^16 (T.81 H.1.2.1), not
-  modulo 2^P. The mask applied below is 2^P, which is the same number for
-  every conforming frame — a sample is below 2^P and 2^P divides 2^16, so the
-  residue class has one representative in range — and keeps the result inside
-  the precision the frame declares. What must not be done is take the
-  *difference* modulo 2^P when encoding; see conformance/encode.py.
+  modulo 2^P. The mask applied below is 2^(P-Pt) — the width of a sample in
+  the entropy-coded data, which is the image after the point transform's right
+  shift — and it is the same number for every conforming frame, because such a
+  sample is already below 2^(P-Pt) and that divides 2^16, so the residue class
+  has one representative in range. Masking with 2^P instead passed samples the
+  output shift then multiplied past the precision the frame declares. What
+  must not be done is take the *difference* modulo 2^P when encoding; see
+  conformance/encode.py.
 
 Colour frames (three components, 1x1 sampling, one interleaved scan — the shape
 every RGB ultrasound disc seen so far takes) are decoded with per-component
@@ -197,7 +200,8 @@ def check_table(counts: list[int], symbols: list[int]) -> None:
             raise LosslessJpegError(f"SSSS={symbol} is out of range")
 
 
-def check_scan(scan: bytes, mcus: int, interval: int) -> None:
+def check_scan(scan: bytes, mcus: int, interval: int,
+               samples: int | None = None) -> None:
     """Refuse an entropy-coded segment that is not the one the encoder wrote.
 
     Only the 0xFF bytes are looked at, and every 0xFF in the segment is one:
@@ -214,6 +218,27 @@ def check_scan(scan: bytes, mcus: int, interval: int) -> None:
     drift. Correctness first is the whole premise; if that ever stops being
     the right trade, this is where to look.
     """
+    # Before anything is allocated, ask whether the scan could possibly hold
+    # the image the header claims. Every sample costs at least one bit — the
+    # shortest Huffman code is one bit, and SSSS=0 appends none — so a scan of
+    # N bytes cannot carry more than 8N samples, whatever is in it.
+    #
+    # This is not a heuristic and it has no tuning knob: a frame past this
+    # bound is truncated, not merely suspicious. It matters because the
+    # refusal used to arrive *after* the output buffer was allocated. A
+    # 51-byte file declaring 65535x65535 asked for 32 GB in the pure-Python
+    # decoder, and took the compiled one 37 seconds, before either of them
+    # worked out there was nothing to decode. Both refused in the end, so no
+    # wrong pixels were ever returned — but a decoder whose stated job is
+    # opening files of unknown origin cannot be talked into that by 51 bytes.
+    if samples is None:
+        samples = mcus
+    if samples > 8 * len(scan):
+        raise LosslessJpegError(
+            f"the frame declares {samples} samples, which need at least "
+            f"{samples} bits, and the scan carries {8 * len(scan)}: the "
+            "entropy-coded data ends before the image does")
+
     data = np.frombuffer(scan, dtype=np.uint8)
     marks = np.flatnonzero(data == 0xFF)
     if marks.size:
@@ -354,7 +379,16 @@ class _Bits:
     def peek16(self) -> int:
         index = self.bit >> 3
         chunk = self.data[index:index + 3]
-        value = int(chunk[0]) << 16
+        # Past the end reads as zero rather than raising. The padding above
+        # was meant to make that impossible and is only four bytes, so a scan
+        # far shorter than the image it claims walked off the buffer and threw
+        # a bare IndexError out of `plumbline.decode` — 120 of 196 truncation
+        # offsets on one small frame, at a caller told to catch
+        # LosslessJpegError and nothing else. The decision that the scan ran
+        # out belongs to the `bit > supplied` check after the loop, which
+        # knows how many bits the frame really carried; these two reads only
+        # have to reach it without crashing first.
+        value = (int(chunk[0]) << 16) if chunk.size else 0
         if chunk.size > 1:
             value |= int(chunk[1]) << 8
         if chunk.size > 2:
@@ -373,7 +407,8 @@ class _Bits:
         value = 0
         for _ in range(size):
             index = self.bit >> 3
-            value = (value << 1) | ((int(self.data[index]) >> (7 - (self.bit & 7))) & 1)
+            byte = int(self.data[index]) if index < self.data.size else 0
+            value = (value << 1) | ((byte >> (7 - (self.bit & 7))) & 1)
             self.bit += 1
         if value < (1 << (size - 1)):
             value -= (1 << size) - 1
@@ -538,7 +573,8 @@ def decode(frame: bytes) -> np.ndarray:
             built[identifier] = _Huffman(*info["tables"][identifier])
         tables.append(built[identifier])
 
-    check_scan(frame[info["scan_offset"]:], height * width, interval)
+    check_scan(frame[info["scan_offset"]:], height * width, interval,
+               height * width * components)
     bits = _Bits(frame[info["scan_offset"]:])
     if bits.data.size <= _PEEK_PADDING:        # only the peek padding is left
         raise LosslessJpegError("there is no entropy-coded data in the scan")
