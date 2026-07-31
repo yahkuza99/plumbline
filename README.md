@@ -152,12 +152,22 @@ what this project does not claim.
 ## Install
 
 ```sh
-pip install plumbline
+pip install plumbline-dicom
 ```
 
+```python
+import plumbline          # the install name and the import name differ
+```
+
+`plumbline` on PyPI is an unrelated geospatial tool by a different author,
+published in 2021, and it owns both that distribution name and that import
+name. Installing it alongside this package gives you whichever wrote its files
+last, so do not install both — and if you have, `plumbline.decode` will be
+missing rather than wrong, which is the failure this project would choose.
+
 Wheels carry the compiled core — no build step, no C toolchain. Where no wheel
-matches your platform it falls back to numba (`plumbline[turbo]`), then to the
-pure-Python reference. **You lose speed, never a file.**
+matches your platform it falls back to numba (`plumbline-dicom[turbo]`), then
+to the pure-Python reference. **You lose speed, never a file.**
 
 Build the core yourself with `python native/build.py`, which finds `cl`, `gcc`,
 `clang` or `zig cc` on its own.

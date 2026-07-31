@@ -11,9 +11,14 @@ for every Python version on that platform. That is the whole reason for
 using ctypes instead of a extension module, and it means three wheels per
 release instead of three per release per supported interpreter.
 
-A build with no core present stays pure `py3-none-any` — that is the
-source-only install, which falls back to numba or to the reference
-implementation.
+A build with no core present stays pure `py3-none-any`. That is a real and
+supported outcome — it is what `pip install` does from an sdist on a platform
+with no wheel — so it cannot be made an error here. It is also exactly what
+`python -m build` produces by accident, because that command builds the wheel
+*from the sdist it just made*, and an sdist can never carry a compiled binary.
+The two are indistinguishable at this point in the build, so the guard against
+publishing one lives where it can tell them apart: `tools/check_dist.py`,
+which reads the finished artefacts.
 """
 
 import sysconfig
@@ -34,8 +39,9 @@ class PlatformTagHook(BuildHookInterface):
 
         if not built:
             self.app.display_warning(
-                "no compiled core found — building a pure-Python wheel. "
-                "Run `python native/build.py` first to ship the fast path."
+                "no compiled core found — building a pure-Python wheel. This "
+                "is correct for a source install and wrong for a release; "
+                "tools/check_dist.py is what tells the two apart."
             )
             return
 

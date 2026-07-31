@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "plumbline"
+name = "plumbline-dicom"
 version = "0.1.0"
 description = "A lossless JPEG (ITU-T T.81 SOF3) decoder that is right, or says so"
 readme = "README.md"
@@ -47,7 +47,30 @@ artifacts = ["src/plumbline/_plumbline.*"]
 path = "hatch_build.py"
 
 [tool.hatch.build.targets.sdist]
-include = ["src/", "native/", "tests/", "README.md", "LICENSE", "NOTICE"]
+# Everything needed to run the suite the project asks people to run, plus
+# the corpus the paper invites them to reuse. "README.md" alone matched
+# conformance/README.md and nothing else in that directory, so an sdist
+# carried one file of a 1,707-frame corpus and a test suite that could not
+# collect.
+include = [
+    "src/",
+    "native/",
+    "tests/",
+    "conformance/",
+    ".githooks/",
+    "hatch_build.py",
+    "/README.md",
+    "/CORRECTNESS.md",
+    "/CHANGELOG.md",
+    "/CONTRIBUTING.md",
+    "/SECURITY.md",
+    "/SUPPORT.md",
+    "/MAINTENANCE.md",
+    "/CITATION.cff",
+    "/LICENSE",
+    "/NOTICE",
+]
+exclude = ["**/__pycache__", "**/*.pyc"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

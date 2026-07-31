@@ -100,3 +100,54 @@ jobs:
         run: |
           pip install pytest
           python -m pytest tests/test_hook.py -q
+
+  package:
+    name: the distribution does what the README promises
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install build numpy pytest twine auditwheel
+
+      # `python -m build` with no arguments builds the wheel from the sdist,
+      # which cannot carry a binary, so the obvious command yields a
+      # `py3-none-any` wheel that pip would then prefer on every platform. The
+      # two steps below are the release procedure precisely because the one
+      # step is wrong, and check_dist.py is what refuses the wrong one.
+      - name: Build the core, then the distributions
+        run: |
+          python native/build.py
+          python -m build --sdist
+          python -m build --wheel --no-isolation
+
+      # `sysconfig.get_platform()` reports `linux_x86_64`, which PyPI rejects
+      # on upload and which records no glibc floor, so it says nothing about
+      # which systems the binary will actually run on. auditwheel reads the
+      # .so's own symbol versions and retags it `manylinux_<major>_<minor>`
+      # accordingly — the tag is then a measured fact rather than a guess.
+      - name: Retag the Linux wheel as manylinux
+        run: |
+          auditwheel repair dist/*-linux_*.whl -w dist/
+          rm -f dist/*-linux_x86_64.whl
+
+      - name: Refuse a distribution that cannot keep the promise
+        run: python tools/check_dist.py dist/
+
+      - run: twine check dist/*
+
+      # The suite shipped inside the tarball has to pass, because a packager or
+      # an auditor deciding whether to trust this project runs exactly that.
+      - name: Run the test suite from inside the sdist
+        run: |
+          mkdir -p /tmp/sdist && tar -xzf dist/*.tar.gz -C /tmp/sdist
+          cd /tmp/sdist/* && python -m pytest tests/ -q
+
+      # And the wheel has to deliver the compiled core to a clean machine —
+      # the claim is "no build step", and nothing else here tests it.
+      - name: Install the wheel somewhere clean and check the engine
+        run: |
+          python -m venv /tmp/clean
+          /tmp/clean/bin/pip install --quiet numpy dist/*.whl
+          test "$(/tmp/clean/bin/python -c 'import plumbline; print(plumbline.engine())')" = native
