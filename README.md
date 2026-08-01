@@ -52,7 +52,7 @@ Every number here was measured and can be re-measured on your own files. None
 of it is asserted.
 
 ![Coverage of the lossless JPEG parameter space: all 105 precision-by-predictor
-combinations are swept by the conformance corpus; 7 of them, all predictor 1,
+combinations are swept by the conformance corpus; 6 of them, all predictor 1,
 also appear in real files](docs/coverage.svg)
 
 ### Against real files
@@ -158,10 +158,21 @@ including ours, until you have run it yourself.
 The limits matter more than the totals, so they are stated first rather than
 buried.
 
-**Every predictor observed in all 68,369 real frames was 1.** The other six are
-implemented and swept synthetically, but no scanner here has exercised them.
-That is the sharpest limit in this document — and it is exactly where two bugs
-hid until the conformance corpus was built.
+**Every predictor in the archive is 1 — measured.** All 66,222 lossless files
+had their scan headers read; every one selects predictor 1, and 120 more, 0.18%,
+keep theirs past the window the survey reads and were not checked. The other six
+predictors are implemented and swept synthetically, but no scanner here has
+exercised them. That is the sharpest limit in this document — and exactly where
+two bugs hid until the conformance corpus was built.
+
+    python conformance/survey_discs.py --predictors --out survey.json /your/discs
+
+**Restart intervals are narrow.** 20,638 files restart once per row, 45,584 do
+not restart at all, and in this archive nothing else occurs. A second and much
+smaller set of real discs here does contain 25- and 34-row intervals, which is
+worth knowing: a corpus big enough to look conclusive can still be one
+market's habits repeated 68,369 times. No real interval anywhere is a fraction
+of a row, which is the property the refusal in CORRECTNESS.md relies on.
 
 **The vendor mix is uneven.** Siemens, GE and Philips CT and MR dominate;
 Konica Minolta and Shimadzu do not appear at all. The full list of what did

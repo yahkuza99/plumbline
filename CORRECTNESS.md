@@ -194,14 +194,26 @@ What the corpus really is thin or silent on: **Konica Minolta** and
 **Shimadzu**; machines older than roughly 2010; and anything re-encoded by a
 vendor's own export or archiving software rather than written by the scanner.
 
-**Every predictor observed in it was 1**, and this is the most important
-limitation on the page. Predictors 2–7 are implemented and covered by the
-synthetic corpus, but no real disc here has ever exercised them, so they carry
-far less evidence than the frame count above might suggest. Both bugs fixed in
-the release that added this paragraph were invisible under predictor 1 and
-would have gone on being invisible for as long as the evidence was real frames
-alone. The restart intervals are similarly narrow: of the frames that carry
-markers at all, every one restarts exactly once per row.
+**Every predictor in it is 1 — read from the scan headers, not assumed.**
+All 66,222 lossless files were checked with
+`conformance/survey_discs.py --predictors`: every one is predictor 1. A further
+120, 0.18%, keep their scan header past the window the survey reads and were
+not checked; they are counted rather than quietly excluded.
+
+This is the most important limitation on the page. Predictors 2–7 are
+implemented and swept by the synthetic corpus, but no real disc here has
+exercised them, so they carry far less evidence than the frame count above
+might suggest. Both bugs fixed in the release that added this paragraph were
+invisible under predictor 1, and would have stayed invisible for as long as the
+evidence was real frames alone.
+
+**Restart intervals are narrow, but not as narrow as this page used to say.**
+In this archive 20,638 files restart once per row, 45,584 do not restart at
+all, and nothing else occurs. A second and much smaller set of real discs held
+by this project contains intervals of 25 and 34 rows — so "every frame that
+restarts, restarts once per row" was true of the archive that was measured and
+false of real files in general. No interval anywhere is a fraction of a row,
+which is the property the refusal in §The traps relies on.
 
 If you have discs from elsewhere, running `native/compare.py` against them is
 the single most useful thing you can do for this project — no files need to

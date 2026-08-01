@@ -26,21 +26,20 @@
 <rect x="256" y="74" width="34" height="34" rx="4" fill="#dfe6ee" stroke="#c6d2de" stroke-width="1"/>
 <rect x="293" y="74" width="34" height="34" rx="4" fill="#dfe6ee" stroke="#c6d2de" stroke-width="1"/>
 <rect x="330" y="74" width="34" height="34" rx="4" fill="#2a78d6"/>
-<text x="347" y="94" font-size="9" text-anchor="middle" fill="#ffffff" font-weight="600" font-variant-numeric="tabular-nums">2.7k</text>
+<text x="347" y="94" font-size="9" text-anchor="middle" fill="#ffffff" font-weight="600" font-variant-numeric="tabular-nums">2.1k</text>
 <rect x="367" y="74" width="34" height="34" rx="4" fill="#dfe6ee" stroke="#c6d2de" stroke-width="1"/>
 <rect x="404" y="74" width="34" height="34" rx="4" fill="#dfe6ee" stroke="#c6d2de" stroke-width="1"/>
-<rect x="441" y="74" width="34" height="34" rx="4" fill="#2a78d6"/>
-<text x="458" y="94" font-size="9" text-anchor="middle" fill="#ffffff" font-weight="600" font-variant-numeric="tabular-nums">21</text>
+<rect x="441" y="74" width="34" height="34" rx="4" fill="#dfe6ee" stroke="#c6d2de" stroke-width="1"/>
 <rect x="478" y="74" width="34" height="34" rx="4" fill="#2a78d6"/>
-<text x="495" y="94" font-size="9" text-anchor="middle" fill="#ffffff" font-weight="600" font-variant-numeric="tabular-nums">27k</text>
+<text x="495" y="94" font-size="9" text-anchor="middle" fill="#ffffff" font-weight="600" font-variant-numeric="tabular-nums">28k</text>
 <rect x="515" y="74" width="34" height="34" rx="4" fill="#2a78d6"/>
-<text x="532" y="94" font-size="9" text-anchor="middle" fill="#ffffff" font-weight="600" font-variant-numeric="tabular-nums">1</text>
+<text x="532" y="94" font-size="9" text-anchor="middle" fill="#ffffff" font-weight="600" font-variant-numeric="tabular-nums">5</text>
 <rect x="552" y="74" width="34" height="34" rx="4" fill="#2a78d6"/>
-<text x="569" y="94" font-size="9" text-anchor="middle" fill="#ffffff" font-weight="600" font-variant-numeric="tabular-nums">77</text>
+<text x="569" y="94" font-size="9" text-anchor="middle" fill="#ffffff" font-weight="600" font-variant-numeric="tabular-nums">81</text>
 <rect x="589" y="74" width="34" height="34" rx="4" fill="#2a78d6"/>
-<text x="606" y="94" font-size="9" text-anchor="middle" fill="#ffffff" font-weight="600" font-variant-numeric="tabular-nums">7</text>
+<text x="606" y="94" font-size="9" text-anchor="middle" fill="#ffffff" font-weight="600" font-variant-numeric="tabular-nums">14</text>
 <rect x="626" y="74" width="34" height="34" rx="4" fill="#2a78d6"/>
-<text x="643" y="94" font-size="9" text-anchor="middle" fill="#ffffff" font-weight="600" font-variant-numeric="tabular-nums">32k</text>
+<text x="643" y="94" font-size="9" text-anchor="middle" fill="#ffffff" font-weight="600" font-variant-numeric="tabular-nums">36k</text>
 <text x="94" y="132" font-size="11.5" text-anchor="end" fill="#52514e" font-variant-numeric="tabular-nums">predictor 2</text>
 <rect x="108" y="111" width="34" height="34" rx="4" fill="#dfe6ee" stroke="#c6d2de" stroke-width="1"/>
 <rect x="145" y="111" width="34" height="34" rx="4" fill="#dfe6ee" stroke="#c6d2de" stroke-width="1"/>
@@ -141,7 +140,7 @@
 <rect x="108" y="377" width="15" height="15" rx="3" fill="#dfe6ee" stroke="#c6d2de"/>
 <text x="131" y="389" font-size="12" fill="#0b0b0b">Swept by the conformance corpus — all 105</text>
 <rect x="108" y="402" width="15" height="15" rx="3" fill="#2a78d6"/>
-<text x="131" y="414" font-size="12" fill="#0b0b0b">Also seen in real files — 7 combinations, 61,921 frames</text>
+<text x="131" y="414" font-size="12" fill="#0b0b0b">Also seen in real files — 6 combinations, 68,369 frames</text>
 <text x="108" y="443" font-size="11.5" fill="#52514e">Numbers in the blue cells are frame counts. Predictors 2–7 carry synthetic evidence only —</text>
 <text x="108" y="460" font-size="11.5" fill="#52514e">which is exactly where two decoding bugs survived until this corpus existed.</text>
 </svg>

@@ -79,7 +79,9 @@ checking each against libjpeg, which shares no code with this project.
   that only this decoder computes are the failure this project exists to
   prevent, so it refuses instead. Of 2,501 real frames sampled for this,
   every one that restarts at all restarts exactly once per row; none is
-  affected.
+  affected. (A later full survey of 66,222 files agrees for that archive, and
+  finds 25- and 34-row intervals in a second, smaller set of real discs — so
+  the sample was representative of the archive rather than of real files.)
 
 - **The conformance encoder took differences modulo 2^P instead of modulo
   2^16** (§H.1.2.1: *"The difference between the prediction value and the

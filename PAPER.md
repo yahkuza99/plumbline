@@ -239,7 +239,7 @@ Each mechanism failed for a different reason, and the pattern is the point:
 |---|---|
 | three implementations agreeing | all three were written from the same reading of the standard |
 | round trip through the corpus | the encoder shared the misreading with the decoders |
-| 68,369 real frames | every one used predictor 1, where the first bug does not manifest |
+| 68,369 real frames | every one used predictor 1 — since measured across all 66,222 files — and that is where the first bug does not manifest |
 | the modulo error specifically | under modulo 2^P the SSSS = 16 case cannot arise, so the code path that would have exposed it was unreachable |
 
 The last row deserves emphasis. **The two errors concealed each other.** The
@@ -267,18 +267,36 @@ better it looks the more convincing the mistake it can conceal.
 
 ## 5. Limitations
 
-**Every predictor in all 68,369 real frames was 1.** Predictors 2–7 carry
-synthetic evidence only. This is the sharpest limitation here, and it is
-exactly where both bugs lived.
+**Every predictor in the archive is 1 — measured, not assumed.** The scan
+header of all 66,222 lossless files was read: 66,222 predictor 1, none
+otherwise. A further 120 files, 0.18%, carry their scan header past the window
+the survey reads and were not checked; they are counted and reported rather
+than rounded away. Predictors 2–7 therefore carry synthetic evidence only.
+This is the sharpest limitation here, and it is exactly where both bugs lived.
+
+Until this release the statement was made without anything measuring it, in the
+same section and for the same reason as the frame count beside it. It is now
+`conformance/survey_discs.py --predictors`, and the answer happened to be the
+one already claimed — which is worth saying plainly, because it would have been
+just as publishable had it not been.
 
 **The vendor distribution is uneven.** Siemens, GE and Philips CT and MR
 dominate. Konica Minolta and Shimadzu do not appear at all. Eight frames of
 public research data under CC BY were added to widen coverage — contributing
 PET, a modality otherwise absent — but they are predictor 1 as well.
 
-**Restart intervals in real data were uniform.** Every frame that restarts at
-all restarts once per row. Intervals that are legal but unusual are covered
-synthetically and not otherwise.
+**Restart intervals in real data are nearly, but not entirely, uniform.** In
+the surveyed archive 20,638 files restart once per row and 45,584 do not
+restart at all; nothing else appears, and no interval is a fraction of a row.
+But a second, smaller set of real discs held by this project — 321 lossless
+files, surveyed the same way — contains intervals of 25 and 34 rows.
+
+The claim here previously read "every frame that restarts at all restarts once
+per row", drawn from a 2,501-frame sample. It is true of the large archive and
+false of the smaller set, which is a useful reminder that a corpus large enough
+to look conclusive can still be one machine's habits repeated 68,369 times.
+Intervals of more than one row are exercised synthetically and by those two
+files; intervals that are not whole rows are refused (§4.1).
 
 **"No known silent failures on the corpus we have"** is much weaker than
 "correct". It is also the strongest claim anyone can honestly make about a
