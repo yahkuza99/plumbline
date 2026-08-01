@@ -112,7 +112,7 @@ def check_frame(info: dict) -> None:
     # it landed in, the next `width` samples, or none at all) and libjpeg
     # reproduces none of them — measured, not assumed. Every reading is
     # therefore a guess, and pixels nobody else computes are exactly what this
-    # decoder exists not to return. No frame in the 81,172 real ones this
+    # decoder exists not to return. No frame in the 68,369 real ones this
     # project has decoded uses such an interval; every one that restarts at all
     # restarts once per row.
     interval = info.get("restart_interval", 0)

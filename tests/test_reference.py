@@ -7,7 +7,7 @@ special case; and where the reconstruction wraps.
 
 The first three were found by decoding real hospital discs and diffing against
 two independent decoders. The Ra rule could not have been — every one of the
-81,172 real frames this project has decoded uses predictor 1, under which the
+68,369 real frames this project has decoded uses predictor 1, under which the
 correct and incorrect readings compute the same image. It was found by reading
 Annex H sentence by sentence, and it is why the tests here quote the clause
 rather than describing it.
@@ -136,7 +136,7 @@ class TestDecoding:
         So a restart does not merely reset the prediction *value* for the one
         sample that follows the marker; it puts that whole line back on Ra.
         Under predictor 1 the two readings are the same number, which is why
-        this went unnoticed: every one of the 81,172 real frames this project
+        this went unnoticed: every one of the 68,369 real frames this project
         has decoded uses predictor 1.
 
         Four rows of four, predictor 2 (Rb), one restart after two rows. Each
