@@ -6,7 +6,14 @@ produced the numbers was not kept. An unreproducible number in a document whose
 argument is reproducibility is the wrong kind of number, so this is that script,
 and it now ships.
 
-    python conformance/survey_discs.py /path/to/archive > survey.json
+    python conformance/survey_discs.py --out survey.json /path/to/archive
+
+Prefer `--out` to shell redirection for any run that will outlive its terminal.
+Detached on Windows, `> file` hands the process a handle owned by the session
+that launched it; when the session ends the handle closes and the survey dies
+on its next write, leaving an empty file and no error anywhere to say why. That
+cost two hour-long runs before it was understood. Progress goes to
+`<out>.log` beside it, opened the same way and for the same reason.
 
 It reads device attributes and geometry — manufacturer, model, modality,
 transfer syntax, bit depth, frame count — and nothing that describes a person.
@@ -260,17 +267,31 @@ def survey(root: str, progress=None, predictors: bool = False) -> dict:
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) < 2:
+    predictors = "--predictors" in argv
+    out_path = None
+    roots = []
+    argument = iter(argv[1:])
+    for item in argument:
+        if item == "--out":
+            out_path = next(argument, None)
+        elif not item.startswith("--"):
+            roots.append(item)
+
+    if not roots:
         print(__doc__.strip().splitlines()[0], file=sys.stderr)
-        print(f"usage: {argv[0]} <archive-root> [more roots...]", file=sys.stderr)
+        print(f"usage: {argv[0]} [--predictors] [--out FILE] "
+              "<archive-root> [more roots...]", file=sys.stderr)
         return 2
 
-    predictors = "--predictors" in argv
-    roots = [a for a in argv[1:] if not a.startswith("--")]
-    if not roots:
-        print(f"usage: {argv[0]} [--predictors] <archive-root> [more roots...]",
-              file=sys.stderr)
-        return 2
+    # `--out` exists because shell redirection is not survivable. Detached on
+    # Windows, `> file` hands the child a handle owned by the session that
+    # launched it; when that session ends the handle closes, and the survey
+    # dies on its next write with nothing written anywhere to say why. It cost
+    # two runs of an hour each to work that out. A file the script opens itself
+    # belongs to the script.
+    out = open(out_path, "w", encoding="utf-8") if out_path else sys.stdout
+    log = (open(out_path + ".log", "w", encoding="utf-8", buffering=1)
+           if out_path else sys.stderr)
 
     merged = None
     for number, root in enumerate(roots, start=1):
@@ -280,13 +301,17 @@ def main(argv: list[str]) -> int:
             # folder is still a path — even though they typed it themselves,
             # because what gets typed into a terminal ends up in shell history,
             # in a CI log, and in the issue where they paste the output.
-            print(f"argument {number} is not a directory", file=sys.stderr)
+            print(f"argument {number} is not a directory", file=log, flush=True)
             return 2
-        print(f"surveying root {number} of {len(roots)}", file=sys.stderr)
-        result = survey(root, progress=sys.stderr, predictors=predictors)
+        print(f"surveying root {number} of {len(roots)}", file=log, flush=True)
+        result = survey(root, progress=log, predictors=predictors)
         merged = result if merged is None else _merge(merged, result)
 
-    print(json.dumps(merged, ensure_ascii=False, indent=1))
+    json.dump(merged, out, ensure_ascii=False, indent=1)
+    out.write("\n")
+    if out is not sys.stdout:
+        out.close()
+        print("done", file=log, flush=True)
     return 0
 
 
