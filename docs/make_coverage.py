@@ -28,7 +28,7 @@ from pathlib import Path
 SVG = Path(__file__).with_name("coverage.svg")
 
 # Geometry of the grid, read off the figure as drawn.
-LEFT, TOP, STEP, SIZE = 108, 74, 37, 34
+LEFT, TOP, STEP, SIZE = 108, 92, 37, 34
 PRECISIONS = range(2, 17)
 PREDICTORS = range(1, 8)
 
@@ -110,6 +110,10 @@ def main(argv: list[str]) -> int:
     text = re.sub(r"Also seen in real files — [^<]*",
                   f"Also seen in real files — {len(tally)} combinations, "
                   f"{frames:,} frames", text)
+    # The accessible description carries the same count as the legend. It drifted
+    # once, saying seven when the legend said six, so it is now derived too.
+    text = re.sub(r"only \d+, all predictor 1",
+                  f"only {len(tally)}, all predictor 1", text)
     SVG.write_text(text, encoding="utf-8")
 
     print(f"redrew {SVG.name}: {changed} cells, {len(tally)} of them reached, "

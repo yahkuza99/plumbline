@@ -133,6 +133,19 @@ heavy dependency that lags each new Python release by months.
   implementations written from one reading of the specification is not
   evidence that the reading was right — as the section above records, twice.
 
+### Documentation
+
+- The coverage figure said two different things about itself. Its legend
+  counted six real-file combinations while its accessible description said
+  seven, and a screen reader would have been told the wrong number with no way
+  to notice. Both are now written from the same tally by
+  `docs/make_coverage.py`, so they cannot drift apart again.
+- The same figure drew the precision axis label on top of its own subtitle,
+  and clipped the last line of its caption at the bottom edge. The drawing is
+  18px taller in the header and 13px taller at the foot; `TOP` moved with it,
+  which the generator's own geometry check confirms, because it refuses to
+  write numbers into squares it cannot find.
+
 ### Not carried over
 
 No git history from the application this came out of. That repository
