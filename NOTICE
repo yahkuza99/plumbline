@@ -52,25 +52,35 @@ scanner firmware from outside the region the rest of the corpus came from.
 They are bare JPEG frames — the entropy-coded image only. No DICOM tags,
 and so nothing identifying a patient, travelled with them.
 
+**These frames have been modified.** Each was extracted from a DICOM file in
+the collection named below: the encapsulated JPEG stream was taken out and
+every DICOM data element was discarded. The entropy-coded image is unchanged
+— not re-encoded, not cropped, not rescaled — but the file you have here is
+not the file the collection publishes.
+
 Each is redistributed under the Creative Commons Attribution licence its
-collection carries, with the attribution that licence requires:
+collection carries. Cite the collection by its DOI, which is the attribution
+those collections ask for:
 
-  nlst  —  CC BY 4.0
+  nlst  —  CC BY 4.0  ·  https://creativecommons.org/licenses/by/4.0/
     https://doi.org/10.7937/tcia.hmq8-j677
-    Philips Mx8000 (CT)
-    SIEMENS Volume Zoom (CT)
 
-  tcga_ucec  —  CC BY 3.0
+  tcga_ucec  —  CC BY 3.0  ·  https://creativecommons.org/licenses/by/3.0/
     https://doi.org/10.7937/k9/tcia.2016.gkj0zwac
-    GE MEDICAL SYSTEMS Discovery 690 (PT)
-    GE MEDICAL SYSTEMS Discovery RX (PT)
-    SIEMENS SOMATOM Definition AS+ (CT)
-    SIEMENS SOMATOM Definition Flash (CT)
 
-  upenn_gbm  —  CC BY 4.0
+  upenn_gbm  —  CC BY 4.0  ·  https://creativecommons.org/licenses/by/4.0/
     https://doi.org/10.7937/tcia.709x-dn49
-    SIEMENS TrioTim (MR)
-    SIEMENS Verio (MR)
+
+The scanner behind each frame is recorded below and in the manifest. No
+licence requires it. It is here because it is the reason these eight files
+exist: they cover scanner firmware the rest of the corpus never sees, and a
+decoder bug that only one vendor's encoder can produce is worth being able to
+point at.
+
+  nlst        Philips Mx8000 (CT) · SIEMENS Volume Zoom (CT)
+  tcga_ucec   GE MEDICAL SYSTEMS Discovery 690 (PT) · Discovery RX (PT)
+              SIEMENS SOMATOM Definition AS+ (CT) · Definition Flash (CT)
+  upenn_gbm   SIEMENS TrioTim (MR) · SIEMENS Verio (MR)
 
 Full per-file attribution, including checksums, is in
 `tests/data/idc/manifest.json`.
