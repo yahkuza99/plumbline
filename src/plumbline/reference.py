@@ -1,7 +1,7 @@
 """A lossless JPEG decoder we own outright.
 
 Covers SOF3 — DICOM transfer syntaxes 1.2.840.10008.1.2.4.70 and .57 — which is
-what nearly every disc from a Thai hospital arrives in, and the one format whose
+what nearly every hospital disc arrives in, and the one format whose
 only readily available decoder is GPL-3.0 and drags the whole application into
 GPL with it.
 
